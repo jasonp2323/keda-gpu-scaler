@@ -6,6 +6,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/pmady/keda-gpu-scaler)](https://goreportcard.com/report/github.com/pmady/keda-gpu-scaler)
 [![GitHub stars](https://img.shields.io/github/stars/pmady/keda-gpu-scaler?style=social)](https://github.com/pmady/keda-gpu-scaler/stargazers)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/XXXXX/badge)](https://www.bestpractices.dev/projects/XXXXX)
 ![KEDA: v2.10+](https://img.shields.io/badge/KEDA-v2.10%2B-orange)
 ![Kubernetes: v1.24+](https://img.shields.io/badge/Kubernetes-v1.24%2B-blue)
 
@@ -255,7 +256,9 @@ docker push your-registry/keda-gpu-scaler:v0.1.0
 
 ## Featured In
 
+- **[GPU Autoscaling on Kubernetes with KEDA — Building an External Scaler](https://www.cncf.io/blog/2026/05/27/gpu-autoscaling-on-kubernetes-with-keda-building-an-external-scaler/)** — CNCF Blog (May 2026)
 - **[Abstracting AI Infrastructure: Native GPU Scaling for Internal Developer Platforms](https://platformengineering.com/contributed-content/abstracting-ai-infrastructure-native-gpu-scaling-for-internal-developer-platforms/)** — Platform Engineering (May 2026)
+- **[The Financial Trap of Autonomous Networks: Scaling Agentic AI in the Telecom Core](https://techblog.comsoc.org/2026/03/30/the-financial-trap-of-autonomous-networks-scaling-agentic-ai-in-the-telecom-core/)** — IEEE ComSoc Technology Blog (March 2026)
 
 ---
 
