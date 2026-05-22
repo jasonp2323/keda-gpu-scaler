@@ -17,9 +17,13 @@ limitations under the License.
 package scaler
 
 import (
+	"context"
 	"testing"
 
+	"go.uber.org/zap"
+
 	"github.com/pmady/keda-gpu-scaler/pkg/gpu"
+	pb "github.com/pmady/keda-gpu-scaler/pkg/externalscaler"
 	"github.com/pmady/keda-gpu-scaler/pkg/profiles"
 )
 
@@ -286,3 +290,206 @@ func TestAggregateEmpty(t *testing.T) {
 
 // MetricType alias for the test that uses a raw string
 type MetricType = profiles.MetricType
+
+func newTestScaler(devices []gpu.Metrics) *GPUExternalScaler {
+	logger, _ := zap.NewDevelopment()
+	return NewGPUExternalScaler(gpu.NewMockCollector(devices), logger)
+}
+
+var testDevices = []gpu.Metrics{
+	{Index: 0, UUID: "GPU-0", Name: "A100", GPUUtilization: 80, MemoryUtilization: 60, MemoryUsedMiB: 40960, MemoryTotalMiB: 81920, TemperatureCelsius: 65, PowerDrawWatts: 250, PowerLimitWatts: 400},
+	{Index: 1, UUID: "GPU-1", Name: "A100", GPUUtilization: 30, MemoryUtilization: 20, MemoryUsedMiB: 16384, MemoryTotalMiB: 81920, TemperatureCelsius: 45, PowerDrawWatts: 100, PowerLimitWatts: 400},
+}
+
+func TestIsActive(t *testing.T) {
+	s := newTestScaler(testDevices)
+
+	tests := []struct {
+		name     string
+		metadata map[string]string
+		want     bool
+	}{
+		{
+			name:     "active when max GPU util exceeds threshold",
+			metadata: map[string]string{"activationThreshold": "50"},
+			want:     true, // max(80,30)=80 > 50
+		},
+		{
+			name:     "inactive when max GPU util below threshold",
+			metadata: map[string]string{"activationThreshold": "90"},
+			want:     false, // max(80,30)=80 < 90
+		},
+		{
+			name:     "active at zero threshold",
+			metadata: map[string]string{"activationThreshold": "0"},
+			want:     true, // 80 > 0
+		},
+		{
+			name:     "single GPU active",
+			metadata: map[string]string{"gpuIndex": "0", "activationThreshold": "50"},
+			want:     true, // GPU 0 = 80 > 50
+		},
+		{
+			name:     "single GPU inactive",
+			metadata: map[string]string{"gpuIndex": "1", "activationThreshold": "50"},
+			want:     false, // GPU 1 = 30 < 50
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := s.IsActive(context.Background(), &pb.ScaledObjectRef{
+				Name:           "test-so",
+				ScalerMetadata: tt.metadata,
+			})
+			if err != nil {
+				t.Fatalf("IsActive() error = %v", err)
+			}
+			if resp.Result != tt.want {
+				t.Errorf("IsActive() = %v, want %v", resp.Result, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetMetricSpec(t *testing.T) {
+	s := newTestScaler(testDevices)
+
+	tests := []struct {
+		name           string
+		metadata       map[string]string
+		wantMetricName string
+		wantTarget     float64
+	}{
+		{
+			name:           "defaults",
+			metadata:       map[string]string{},
+			wantMetricName: "keda_gpu_metric",
+			wantTarget:     80,
+		},
+		{
+			name:           "vllm profile",
+			metadata:       map[string]string{"profile": "vllm-inference"},
+			wantMetricName: "keda_gpu_vllm_inference",
+			wantTarget:     80,
+		},
+		{
+			name:           "custom target",
+			metadata:       map[string]string{"targetValue": "95", "metricName": "custom_metric"},
+			wantMetricName: "custom_metric",
+			wantTarget:     95,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := s.GetMetricSpec(context.Background(), &pb.ScaledObjectRef{
+				Name:           "test-so",
+				ScalerMetadata: tt.metadata,
+			})
+			if err != nil {
+				t.Fatalf("GetMetricSpec() error = %v", err)
+			}
+			if len(resp.MetricSpecs) != 1 {
+				t.Fatalf("expected 1 metric spec, got %d", len(resp.MetricSpecs))
+			}
+			spec := resp.MetricSpecs[0]
+			if spec.MetricName != tt.wantMetricName {
+				t.Errorf("MetricName = %v, want %v", spec.MetricName, tt.wantMetricName)
+			}
+			if spec.TargetSizeFloat != tt.wantTarget {
+				t.Errorf("TargetSizeFloat = %v, want %v", spec.TargetSizeFloat, tt.wantTarget)
+			}
+		})
+	}
+}
+
+func TestGetMetrics(t *testing.T) {
+	s := newTestScaler(testDevices)
+
+	tests := []struct {
+		name     string
+		metadata map[string]string
+		want     float64
+	}{
+		{
+			name:     "max GPU util across all GPUs",
+			metadata: map[string]string{},
+			want:     80, // max(80, 30)
+		},
+		{
+			name:     "avg GPU util",
+			metadata: map[string]string{"aggregation": "avg"},
+			want:     55, // (80+30)/2
+		},
+		{
+			name:     "sum GPU util",
+			metadata: map[string]string{"aggregation": "sum"},
+			want:     110, // 80+30
+		},
+		{
+			name:     "min GPU util",
+			metadata: map[string]string{"aggregation": "min"},
+			want:     30,
+		},
+		{
+			name:     "single GPU memory percent",
+			metadata: map[string]string{"gpuIndex": "0", "metricType": "memory_used_percent"},
+			want:     50, // 40960/81920 * 100
+		},
+		{
+			name:     "temperature metric",
+			metadata: map[string]string{"metricType": "temperature", "aggregation": "max"},
+			want:     65,
+		},
+		{
+			name:     "power draw metric",
+			metadata: map[string]string{"metricType": "power_draw", "aggregation": "sum"},
+			want:     350, // 250+100
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp, err := s.GetMetrics(context.Background(), &pb.GetMetricsRequest{
+				ScaledObjectRef: &pb.ScaledObjectRef{
+					Name:           "test-so",
+					ScalerMetadata: tt.metadata,
+				},
+			})
+			if err != nil {
+				t.Fatalf("GetMetrics() error = %v", err)
+			}
+			if len(resp.MetricValues) != 1 {
+				t.Fatalf("expected 1 metric value, got %d", len(resp.MetricValues))
+			}
+			if resp.MetricValues[0].MetricValueFloat != tt.want {
+				t.Errorf("MetricValueFloat = %v, want %v", resp.MetricValues[0].MetricValueFloat, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetMetricsNoDevices(t *testing.T) {
+	s := newTestScaler([]gpu.Metrics{})
+	_, err := s.GetMetrics(context.Background(), &pb.GetMetricsRequest{
+		ScaledObjectRef: &pb.ScaledObjectRef{
+			Name:           "test-so",
+			ScalerMetadata: map[string]string{},
+		},
+	})
+	if err == nil {
+		t.Error("GetMetrics() with no devices should return error")
+	}
+}
+
+func TestIsActiveInvalidMetadata(t *testing.T) {
+	s := newTestScaler(testDevices)
+	_, err := s.IsActive(context.Background(), &pb.ScaledObjectRef{
+		Name:           "test-so",
+		ScalerMetadata: map[string]string{"profile": "nonexistent"},
+	})
+	if err == nil {
+		t.Error("IsActive() with invalid profile should return error")
+	}
+}
