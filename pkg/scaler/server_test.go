@@ -22,8 +22,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/pmady/keda-gpu-scaler/pkg/gpu"
 	pb "github.com/pmady/keda-gpu-scaler/pkg/externalscaler"
+	"github.com/pmady/keda-gpu-scaler/pkg/gpu"
 	"github.com/pmady/keda-gpu-scaler/pkg/profiles"
 )
 

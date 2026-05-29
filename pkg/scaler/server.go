@@ -24,9 +24,9 @@ import (
 
 	"go.uber.org/zap"
 
+	pb "github.com/pmady/keda-gpu-scaler/pkg/externalscaler"
 	"github.com/pmady/keda-gpu-scaler/pkg/gpu"
 	"github.com/pmady/keda-gpu-scaler/pkg/profiles"
-	pb "github.com/pmady/keda-gpu-scaler/pkg/externalscaler"
 )
 
 // GPUExternalScaler implements the KEDA ExternalScaler gRPC interface.

@@ -68,9 +68,9 @@ func TestMockCollectorCollectDevice(t *testing.T) {
 	c := NewMockCollector(twoGPUs)
 
 	tests := []struct {
-		name    string
-		index   int
-		wantErr bool
+		name     string
+		index    int
+		wantErr  bool
 		wantUUID string
 	}{
 		{"valid index 0", 0, false, "GPU-aaaa-1111"},

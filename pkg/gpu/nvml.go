@@ -26,16 +26,16 @@ import (
 
 // Metrics holds a snapshot of GPU metrics for a single device.
 type Metrics struct {
-	Index             int
-	UUID              string
-	Name              string
-	GPUUtilization    uint32 // percentage 0-100
-	MemoryUtilization uint32 // percentage 0-100
-	MemoryUsedMiB     uint64
-	MemoryTotalMiB    uint64
+	Index              int
+	UUID               string
+	Name               string
+	GPUUtilization     uint32 // percentage 0-100
+	MemoryUtilization  uint32 // percentage 0-100
+	MemoryUsedMiB      uint64
+	MemoryTotalMiB     uint64
 	TemperatureCelsius uint32
-	PowerDrawWatts    uint32
-	PowerLimitWatts   uint32
+	PowerDrawWatts     uint32
+	PowerLimitWatts    uint32
 }
 
 // Collector wraps NVML to collect GPU metrics.
