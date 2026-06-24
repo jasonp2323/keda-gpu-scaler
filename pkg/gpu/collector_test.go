@@ -186,11 +186,11 @@ func TestCollectDeviceBoundary(t *testing.T) {
 var migDevices = []Metrics{
 	// Physical GPU 0 — MIG disabled, standard collection
 	{
-		Index:         0,
-		UUID:          "GPU-aaaa-1111",
-		Name:          "NVIDIA A100-SXM4-80GB",
+		Index:          0,
+		UUID:           "GPU-aaaa-1111",
+		Name:           "NVIDIA A100-SXM4-80GB",
 		GPUUtilization: 50,
-		MemoryUsedMiB: 10240,
+		MemoryUsedMiB:  10240,
 		MemoryTotalMiB: 81920,
 	},
 	// MIG instance 0 on physical GPU 1
