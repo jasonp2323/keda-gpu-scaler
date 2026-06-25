@@ -89,6 +89,10 @@ Releases are fully automated via GitHub Actions. To publish a new release:
 - Write table-driven tests
 - Sign off all commits (`git commit -s`)
 
+## AI-Assisted Contributions
+
+Using AI tools (Copilot, ChatGPT, Claude, Cursor, etc.) is welcome, but all AI-generated code must be human-verified, tested, and match the project's code style before submitting. See [AI_GUIDELINES.md](AI_GUIDELINES.md) for the full policy.
+
 ## Reporting Issues
 
 Please use GitHub Issues. Include:
