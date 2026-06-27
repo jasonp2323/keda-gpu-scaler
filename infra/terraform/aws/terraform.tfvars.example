@@ -1,0 +1,16 @@
+region             = "us-east-2"
+cluster_name       = "keda-gpu-scaler-test"
+kubernetes_version = "1.35"
+gpu_instance_type  = "g5.xlarge"
+gpu_node_count     = 1
+helm_timeout       = 600
+
+gpu_operator_chart_version = "v26.3.2"
+keda_chart_version         = "2.20.1"
+
+scaler_image_repository = "ghcr.io/pmady/keda-gpu-scaler"
+scaler_image_tag        = "v0.5.0"
+
+tags = {
+  Project = "keda-gpu-scaler"
+}
