@@ -221,16 +221,45 @@ func TestParseMetadata(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "negative gpuIndex accepted (no range check in parseMetadata)",
+			name: "gpuIndex -2 rejected",
 			metadata: map[string]string{
 				"gpuIndex": "-2",
+			},
+			wantErr: true,
+		},
+		{
+			name: "gpuIndex -100 rejected",
+			metadata: map[string]string{
+				"gpuIndex": "-100",
+			},
+			wantErr: true,
+		},
+		{
+			name: "gpuIndex -1 accepted (all GPUs)",
+			metadata: map[string]string{
+				"gpuIndex": "-1",
 			},
 			want: scalerConfig{
 				metricName:          "keda_gpu_metric",
 				metricType:          profiles.MetricGPUUtilization,
 				targetValue:         80,
 				activationThreshold: 0,
-				gpuIndex:            -2,
+				gpuIndex:            -1,
+				aggregation:         "max",
+				pollIntervalSeconds: 10,
+			},
+		},
+		{
+			name: "gpuIndex 0 accepted",
+			metadata: map[string]string{
+				"gpuIndex": "0",
+			},
+			want: scalerConfig{
+				metricName:          "keda_gpu_metric",
+				metricType:          profiles.MetricGPUUtilization,
+				targetValue:         80,
+				activationThreshold: 0,
+				gpuIndex:            0,
 				aggregation:         "max",
 				pollIntervalSeconds: 10,
 			},

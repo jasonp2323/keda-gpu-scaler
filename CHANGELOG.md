@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **MIG (Multi-Instance GPU) per-instance metrics**. `CollectAll()` auto-detects MIG-enabled GPUs and enumerates each compute instance via NVML, returning one `Metrics` entry per instance instead of one per physical GPU. Shared chip-level metrics (temperature, power, PCIe, NVLink) are read from the parent GPU and copied into every instance. In HPC environments (SLURM, Flux), MIG UUIDs in `CUDA_VISIBLE_DEVICES` are detected and resolved individually via `CollectByUUID()`. New `Metrics` fields: `IsMIGInstance`, `ParentIndex`, `MigProfile`. New CSV columns: `is_mig_instance`, `parent_index`, `mig_profile`. Table output shows `gpu<N>/inst<M>` labels for MIG rows.
 
+### Fixed
+
+- `parseMetadata` now rejects `gpuIndex` values less than `-1` with a clear error (`invalid gpuIndex -2: it must be -1 (all GPUs) or >= 0`) instead of silently accepting any negative integer. ([#128](https://github.com/pmady/keda-gpu-scaler/issues/128))
+
 ## [v0.5.0] - 2026-06-23
 
 ### Added

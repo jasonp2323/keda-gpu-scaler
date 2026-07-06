@@ -12,7 +12,7 @@ Everything goes in the ScaledObject trigger `metadata`. No config files or extra
 | `targetGpuUtilization` | Shorthand for GPU utilization target | (none) |
 | `targetMemoryUtilization` | Shorthand for VRAM utilization target | (none) |
 | `activationThreshold` | Value below which scale-to-zero activates | `0` |
-| `gpuIndex` | Specific GPU index to monitor | `-1` (all GPUs) |
+| `gpuIndex` | Specific GPU index to monitor. Must be `-1` (all GPUs) or `>= 0`; other negative values are rejected | `-1` (all GPUs) |
 | `aggregation` | Multi-GPU aggregation: `max`, `min`, `avg`, `sum` | `max` |
 | `pollIntervalSeconds` | Metric polling interval | `10` |
 

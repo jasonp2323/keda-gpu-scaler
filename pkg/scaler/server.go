@@ -205,6 +205,9 @@ func parseMetadata(metadata map[string]string) (scalerConfig, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("invalid gpuIndex %q: %w", v, err)
 		}
+		if i < -1 {
+			return cfg, fmt.Errorf("invalid gpuIndex %d: it must be -1 (all GPUs) or >= 0", i)
+		}
 		cfg.gpuIndex = i
 	}
 	if v, ok := metadata["aggregation"]; ok {
