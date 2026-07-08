@@ -4,7 +4,7 @@ How keda-gpu-scaler is run.
 
 ## Overview
 
-Right now this is a single-maintainer project. The governance here is intentionally simple. It'll grow as the contributor base does.
+The governance here is intentionally simple. It'll grow as the contributor base does.
 
 ## Roles
 
@@ -23,6 +23,7 @@ Current maintainers:
 | Name | GitHub | Role |
 |------|--------|------|
 | Pavan Madduri | [@pmady](https://github.com/pmady) | Project creator, lead maintainer |
+| pen-pal | [@pen-pal](https://github.com/pen-pal) | Maintainer |
 
 ### Contributor
 
@@ -31,6 +32,12 @@ Anyone who has had a pull request merged. Contributors are listed in the GitHub 
 ### Reviewer
 
 Active contributors may be granted reviewer status, meaning their approvals count toward PR review requirements. Maintainers nominate reviewers based on track record.
+
+Current reviewers:
+
+| Name | GitHub | Focus area |
+|------|--------|------------|
+| jasonp2323 | [@jasonp2323](https://github.com/jasonp2323) | Infrastructure, Terraform |
 
 ## Decision Making
 
