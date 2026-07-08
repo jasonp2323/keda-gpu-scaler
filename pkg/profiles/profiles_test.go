@@ -64,6 +64,13 @@ func TestGetBuiltinProfiles(t *testing.T) {
 			wantTarget: 800,
 		},
 		{
+			name:       "ollama exists",
+			profile:    "ollama",
+			wantFound:  true,
+			wantMetric: MetricMemoryUsedPercent,
+			wantTarget: 70,
+		},
+		{
 			name:      "unknown profile not found",
 			profile:   "nonexistent",
 			wantFound: false,
@@ -98,8 +105,8 @@ func TestGetBuiltinProfiles(t *testing.T) {
 
 func TestList(t *testing.T) {
 	names := List()
-	if len(names) != 6 {
-		t.Errorf("List() returned %d profiles, want 6", len(names))
+	if len(names) != 7 {
+		t.Errorf("List() returned %d profiles, want 7", len(names))
 	}
 
 	expected := map[string]bool{
@@ -109,6 +116,7 @@ func TestList(t *testing.T) {
 		"training":             false,
 		"batch":                false,
 		"distributed-training": false,
+		"ollama":               false,
 	}
 	for _, name := range names {
 		if _, ok := expected[name]; !ok {

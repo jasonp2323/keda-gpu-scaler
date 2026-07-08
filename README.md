@@ -82,6 +82,7 @@ Instead of configuring raw metric thresholds, use a profile optimized for your w
 | `triton-inference` | GPU Util | 75 | 10 | NVIDIA Triton Inference Server |
 | `training` | GPU Util | 90 | 0 | Training jobs (no scale-to-zero) |
 | `batch` | Memory % | 70 | 1 | Batch inference with aggressive scale-down |
+| `ollama` | Memory % | 70 | 3 | Ollama LLM serving with scale-to-zero |
 | `distributed-training` | NVLink TX | 800 | 100 | Data-parallel training on NVLink systems |
 
 ---

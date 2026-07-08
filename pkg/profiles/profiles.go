@@ -154,6 +154,17 @@ var builtinProfiles = map[string]Profile{
 		ScaleUpStabilize:   5,
 		ScaleDownStabilize: 60,
 	},
+	"ollama": {
+		Name:               "ollama",
+		MetricName:         "keda_gpu_ollama",
+		Description:        "Ollama LLM serving — memory-based, supports scale-to-zero",
+		TargetValue:        70,
+		ActivationValue:    3,
+		MetricType:         MetricMemoryUsedPercent,
+		CooldownSeconds:    60,
+		ScaleUpStabilize:   10,
+		ScaleDownStabilize: 120,
+	},
 }
 
 // Get returns a profile by name.

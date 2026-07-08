@@ -1,0 +1,25 @@
+# Example: ScaledObject for an Ollama deployment using the
+# pre-built ollama profile.
+#
+# Prerequisites:
+#   - keda-gpu-scaler DaemonSet running (kubectl apply -f deploy/manifests.yaml)
+#   - KEDA v2.10+ installed
+#   - A Deployment named "ollama-deployment" in the "ai-workloads" namespace
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ollama-scaler
+  namespace: ai-workloads
+spec:
+  scaleTargetRef:
+    name: ollama-deployment
+  minReplicaCount: 0
+  maxReplicaCount: 10
+  cooldownPeriod: 60
+  triggers:
+    - type: external
+      metadata:
+        # Points to the Service created by deploy/manifests.yaml
+        scalerAddress: "keda-gpu-scaler.keda.svc.cluster.local:6000"
+        # Use the pre-built Ollama profile
+        profile: "ollama"
