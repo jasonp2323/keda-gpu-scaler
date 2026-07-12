@@ -534,3 +534,18 @@ gcloud compute instances list --filter="labels.project=keda-gpu-scaler"
 
 The operator now owns the driver, toolkit, device plugin, and NFD/GFD labels
 on the single untainted node; only DCGM is disabled.
+
+---
+
+# Automated e2e path (Terratest)
+
+The manual `terraform apply` walkthroughs above have an automated counterpart:
+a Terratest suite at [`tests/terratest/`](../../tests/terratest/README.md) that
+applies each cloud's stack, asserts KEDA/`keda-gpu-scaler` scale a workload
+under real GPU load, then destroys the stack.
+
+It runs via [`.github/workflows/e2e-cloud.yaml`](../../.github/workflows/e2e-cloud.yaml),
+but that workflow is **manual and gated, not automatic** — `workflow_dispatch`
+only, requiring a `confirm_cost` input and a GitHub Environment approval gate —
+because every run provisions and bills real GPU hardware, same as running
+`terraform apply` by hand.
