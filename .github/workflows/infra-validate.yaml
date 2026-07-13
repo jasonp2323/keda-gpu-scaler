@@ -6,9 +6,10 @@
 # GPU hardware and is workflow_dispatch-only).
 #
 # Two tiers of checks:
-#   - fmt / validate / tflint: credential-less, run against every PR, BLOCKING.
-#     They only read provider schemas and lint rules — no cloud account is
-#     ever contacted, so they can't leak secrets or cost money.
+#   - fmt / validate / tflint / checkov: credential-less, run against every
+#     PR, BLOCKING. They only read provider schemas, lint rules, and static
+#     IaC scan rules — no cloud account is ever contacted, so they can't leak
+#     secrets or cost money.
 #   - plan: OIDC-authed against the real cloud (read-only), ADVISORY only
 #     (continue-on-error: true at the job level). It is not a merge blocker
 #     because these stacks configure their kubernetes/helm providers from the
@@ -89,6 +90,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: tflint --chdir=infra/terraform/${{ matrix.cloud }} -f compact
+
+  # Checkov: static Terraform security/misconfiguration scan. Credential-less
+  # (reads the Terraform source only, no cloud account contacted) and
+  # BLOCKING, same tier as fmt/validate/tflint above. If a finding is
+  # acceptable for these throwaway test clusters (e.g. a public API
+  # endpoint, no encryption at rest), suppress it via a repo-root
+  # .checkov.yaml (skip-check) or an inline
+  # `#checkov:skip=<CHECK_ID>:<reason>` comment — don't disable this gate.
+  checkov:
+    name: checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@7b972723c44fb3d256283fac96fae5d7c1894bb7 # v12.3114.0
+        with:
+          directory: infra/terraform
+          framework: terraform
+          output_format: cli
+          soft_fail: false
 
   # ADVISORY (continue-on-error: true): these stacks wire their
   # kubernetes/helm providers to the cluster endpoint created by this same
