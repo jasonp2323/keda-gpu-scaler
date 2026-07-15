@@ -46,6 +46,8 @@ This design is documented in [KEDA issue #7538](https://github.com/kedacore/keda
 3. **gRPC Interface** — Implements `externalscaler.ExternalScalerServer` (`IsActive`, `StreamIsActive`, `GetMetricSpec`, `GetMetrics`) to natively integrate with the central KEDA operator.
 4. **ScaledObject Trigger** — Kubernetes deployments scale up/down (including to zero) based on GPU thresholds defined in the ScaledObject.
 
+> **⚠️ Supported Topology**: This scaler is designed for **single GPU node per ScaledObject**. Each DaemonSet pod reports metrics for its local node's GPUs. KEDA queries one pod via the ClusterIP service. **Multi-node cluster-wide aggregation** (e.g., "scale when average GPU utilization across all nodes > 80%") is not yet implemented. For multi-node workloads, deploy one ScaledObject per node or use node selectors. See [#TBD](https://github.com/pmady/keda-gpu-scaler/issues/TBD) for the roadmap.
+
 ---
 
 ## GPU Metrics
@@ -82,7 +84,7 @@ Instead of configuring raw metric thresholds, use a profile optimized for your w
 | `training` | GPU Util | 90 | 0 | Training jobs (no scale-to-zero) |
 | `batch` | Memory % | 70 | 1 | Batch inference with aggressive scale-down |
 | `ollama` | Memory % | 70 | 3 | Ollama LLM serving with scale-to-zero |
-| `distributed-training` | NVLink TX | 800 | 100 | Data-parallel training on NVLink systems |
+| `distributed-training` | NVLink TX | 50000 | 5000 | Data-parallel training on NVLink systems |
 
 ---
 

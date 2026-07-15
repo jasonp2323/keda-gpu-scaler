@@ -100,14 +100,14 @@ triggers:
     metadata:
       scalerAddress: "keda-gpu-scaler.keda.svc.cluster.local:6000"
       metricType: "pcie_tx_kbps"
-      targetValue: "28000"        # ~28 GB/s — near PCIe Gen4 x16 limit
-      activationThreshold: "1000"
+      targetValue: "28000000"     # ~28 GB/s (28,000,000 KB/s) — near PCIe Gen4 x16 limit
+      activationThreshold: "1000000"
       aggregation: "max"
 ```
 
 ### When to use NVLink metrics
 
-Use `nvlink_tx_mbps` / `nvlink_rx_mbps` on **NVSwitch / DGX / HGX** systems where GPUs communicate directly without the CPU (A100: ~600 GB/s aggregate, H100: ~900 GB/s). NVLink saturation indicates the model's communication pattern has outgrown the node — a signal to scale out or adjust parallelism strategy. The `distributed-training` profile uses NVLink TX with sane defaults for A100 systems.
+Use `nvlink_tx_mbps` / `nvlink_rx_mbps` on **NVSwitch / DGX / HGX** systems where GPUs communicate directly without the CPU (A100: ~600 GB/s aggregate, H100: ~900 GB/s). NVLink saturation indicates the model's communication pattern has outgrown the node — a signal to scale out or adjust parallelism strategy. The `distributed-training` profile uses NVLink TX; **tune the target to your hardware** — the default (800 MB/s) is conservative and may need adjustment based on your GPU generation and link topology.
 
 ```yaml
 triggers:
@@ -115,8 +115,8 @@ triggers:
     metadata:
       scalerAddress: "keda-gpu-scaler.keda.svc.cluster.local:6000"
       profile: "distributed-training"
-      targetValue: "800"          # MB/s — tune to your hardware
-      activationThreshold: "100"
+      targetValue: "50000"        # MB/s (~50 GB/s) — tune to your hardware and link count
+      activationThreshold: "5000"
 ```
 
 ### NVLink availability

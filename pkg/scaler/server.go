@@ -19,7 +19,10 @@ package scaler
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -234,6 +237,13 @@ func parseMetadata(metadata map[string]string) (scalerConfig, error) {
 		return cfg, fmt.Errorf("metricType %q requires vllmEndpoint to be set", cfg.metricType)
 	}
 
+	// Basic SSRF guard: block loopback, link-local, and cloud metadata IPs.
+	if cfg.vllmEndpoint != "" {
+		if err := validateVLLMEndpoint(cfg.vllmEndpoint); err != nil {
+			return cfg, fmt.Errorf("invalid vllmEndpoint: %w", err)
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -386,4 +396,40 @@ func aggregate(values []float64, method string) float64 {
 	default:
 		return values[0]
 	}
+}
+
+// validateVLLMEndpoint performs basic SSRF validation on the vllmEndpoint URL.
+// It blocks loopback, link-local, and cloud metadata IPs.
+func validateVLLMEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		return fmt.Errorf("missing hostname")
+	}
+
+	// Resolve hostname to IP addresses.
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("failed to resolve hostname: %w", err)
+	}
+
+	// Block loopback, link-local, and cloud metadata IPs.
+	for _, ip := range ips {
+		if ip.IsLoopback() {
+			return fmt.Errorf("loopback address not allowed: %s", ip)
+		}
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("link-local address not allowed: %s", ip)
+		}
+		// Block AWS, GCP, Azure metadata endpoints.
+		if ip.String() == "169.254.169.254" || strings.HasPrefix(ip.String(), "169.254.169.") {
+			return fmt.Errorf("cloud metadata address not allowed: %s", ip)
+		}
+	}
+
+	return nil
 }
