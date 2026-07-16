@@ -399,11 +399,18 @@ func aggregate(values []float64, method string) float64 {
 }
 
 // validateVLLMEndpoint performs basic SSRF validation on the vllmEndpoint URL.
-// It blocks loopback, link-local, and cloud metadata IPs.
+// It blocks cloud metadata IPs/hostnames that could leak credentials.
+// Validation is based on the hostname/IP literal without DNS resolution so it
+// works in environments where the target may not be resolvable at config time.
 func validateVLLMEndpoint(endpoint string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("unsupported scheme %q, must be http or https", u.Scheme)
 	}
 
 	host := u.Hostname()
@@ -411,23 +418,27 @@ func validateVLLMEndpoint(endpoint string) error {
 		return fmt.Errorf("missing hostname")
 	}
 
-	// Resolve hostname to IP addresses.
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return fmt.Errorf("failed to resolve hostname: %w", err)
-	}
-
-	// Block loopback, link-local, and cloud metadata IPs.
-	for _, ip := range ips {
-		if ip.IsLoopback() {
-			return fmt.Errorf("loopback address not allowed: %s", ip)
-		}
+	// If the host is an IP literal, check it directly.
+	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			return fmt.Errorf("link-local address not allowed: %s", ip)
 		}
-		// Block AWS, GCP, Azure metadata endpoints.
-		if ip.String() == "169.254.169.254" || strings.HasPrefix(ip.String(), "169.254.169.") {
+		// Block AWS/GCP/Azure metadata endpoint (169.254.169.254).
+		if ip.Equal(net.ParseIP("169.254.169.254")) {
 			return fmt.Errorf("cloud metadata address not allowed: %s", ip)
+		}
+	}
+
+	// Block well-known cloud metadata hostnames.
+	lower := strings.ToLower(host)
+	blockedHosts := []string{
+		"metadata.google.internal",
+		"metadata.goog",
+		"169.254.169.254",
+	}
+	for _, blocked := range blockedHosts {
+		if lower == blocked {
+			return fmt.Errorf("cloud metadata hostname not allowed: %s", host)
 		}
 	}
 
