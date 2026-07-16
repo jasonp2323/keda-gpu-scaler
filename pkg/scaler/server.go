@@ -237,7 +237,6 @@ func parseMetadata(metadata map[string]string) (scalerConfig, error) {
 		return cfg, fmt.Errorf("metricType %q requires vllmEndpoint to be set", cfg.metricType)
 	}
 
-	// Basic SSRF guard: block loopback, link-local, and cloud metadata IPs.
 	if cfg.vllmEndpoint != "" {
 		if err := validateVLLMEndpoint(cfg.vllmEndpoint); err != nil {
 			return cfg, fmt.Errorf("invalid vllmEndpoint: %w", err)
@@ -398,10 +397,7 @@ func aggregate(values []float64, method string) float64 {
 	}
 }
 
-// validateVLLMEndpoint performs basic SSRF validation on the vllmEndpoint URL.
-// It blocks cloud metadata IPs/hostnames that could leak credentials.
-// Validation is based on the hostname/IP literal without DNS resolution so it
-// works in environments where the target may not be resolvable at config time.
+// validateVLLMEndpoint blocks cloud metadata endpoints that could leak credentials.
 func validateVLLMEndpoint(endpoint string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {
@@ -418,23 +414,19 @@ func validateVLLMEndpoint(endpoint string) error {
 		return fmt.Errorf("missing hostname")
 	}
 
-	// If the host is an IP literal, check it directly.
 	if ip := net.ParseIP(host); ip != nil {
 		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			return fmt.Errorf("link-local address not allowed: %s", ip)
 		}
-		// Block AWS/GCP/Azure metadata endpoint (169.254.169.254).
 		if ip.Equal(net.ParseIP("169.254.169.254")) {
 			return fmt.Errorf("cloud metadata address not allowed: %s", ip)
 		}
 	}
 
-	// Block well-known cloud metadata hostnames.
 	lower := strings.ToLower(host)
 	blockedHosts := []string{
 		"metadata.google.internal",
 		"metadata.goog",
-		"169.254.169.254",
 	}
 	for _, blocked := range blockedHosts {
 		if lower == blocked {
