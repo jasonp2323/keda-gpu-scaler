@@ -2,10 +2,12 @@
 package terratest
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -66,6 +68,9 @@ func runGPUScalerE2E(cfg gpuScalerE2E) {
 	scalerOpts := k8s.NewKubectlOptions("", kubeconfig, scalerNamespace)
 	demoOpts := k8s.NewKubectlOptions("", kubeconfig, demoAppNamespace)
 
+	// Registered after terraform.Destroy so it runs BEFORE teardown (LIFO) — the cluster still exists.
+	defer collectDiagnostics(cfg, scalerOpts, demoOpts)
+
 	assertScalerReady(t, scalerOpts, cfg.scalerReleaseName)
 	assertScaledObjectReady(t, demoOpts)
 	assertReplicas(t, demoOpts, demoIdleReplicas, idleAssertWait) // idle baseline before load
@@ -76,6 +81,56 @@ func runGPUScalerE2E(cfg gpuScalerE2E) {
 
 	k8s.KubectlDelete(t, demoOpts, loadFile)
 	assertReplicas(t, demoOpts, demoIdleReplicas, scaleDownWait)
+}
+
+// collectDiagnostics dumps cluster state to the test log — and to E2E_ARTIFACTS_DIR if set — when the
+// test has failed. Deferred before terraform.Destroy so the cluster still exists. Best-effort: it uses the
+// error-returning kubectl variant and never fails the test itself.
+func collectDiagnostics(cfg gpuScalerE2E, scalerOpts, demoOpts *k8s.KubectlOptions) {
+	t := cfg.t
+	if !t.Failed() {
+		return
+	}
+	clusterName, _ := cfg.vars["cluster_name"].(string)
+	release := cfg.scalerReleaseName
+
+	var buf bytes.Buffer
+	dump := func(title string, opts *k8s.KubectlOptions, args ...string) {
+		fmt.Fprintf(&buf, "\n===== %s =====\n", title)
+		out, err := k8s.RunKubectlAndGetOutputE(t, opts, args...)
+		if err != nil {
+			fmt.Fprintf(&buf, "(kubectl error: %v)\n", err)
+		}
+		buf.WriteString(out)
+		buf.WriteString("\n")
+	}
+
+	dump("nodes", scalerOpts, "get", "nodes", "-o", "wide")
+	dump("scaler pods", scalerOpts, "get", "pods", "-o", "wide")
+	dump("scaler daemonset", scalerOpts, "describe", "daemonset", release)
+	dump("scaler logs", scalerOpts, "logs", "daemonset/"+release, "--all-containers=true", "--tail=500")
+	dump("demo-app deployment", demoOpts, "describe", "deployment", demoAppName)
+	dump("scaledobject", demoOpts, "get", "scaledobject", scaledObjectName, "-o", "yaml")
+	dump("scaledobject describe", demoOpts, "describe", "scaledobject", scaledObjectName)
+	dump("recent events", demoOpts, "get", "events", "-A", "--sort-by=.lastTimestamp")
+
+	t.Logf("---- e2e failure diagnostics (cluster %q) ----\n%s", clusterName, buf.String())
+
+	dir := os.Getenv("E2E_ARTIFACTS_DIR")
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Logf("diagnostics: could not create %s: %v", dir, err)
+		return
+	}
+	name := "diagnostics"
+	if clusterName != "" {
+		name += "-" + clusterName
+	}
+	if err := os.WriteFile(filepath.Join(dir, name+".txt"), buf.Bytes(), 0o644); err != nil {
+		t.Logf("diagnostics: could not write file: %v", err)
+	}
 }
 
 // writeKubeconfig runs the stack's `configure_kubectl` output command against a fresh temp kubeconfig and
