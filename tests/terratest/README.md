@@ -163,16 +163,123 @@ These two trigger types present **different OIDC subjects** to the cloud provide
    ```
    (Broader alternative if preferred: `"repo:jasonp2323/keda-gpu-scaler:*"` in place of the two explicit subjects.)
 
-3. **Attach a permissions policy** covering what the stack provisions — EKS, EC2/VPC, IAM role/instance-profile creation, Auto Scaling, ELB. Start from AWS-managed policies for a working baseline, then scope down to least privilege for real use:
+3. **Attach a permissions policy.** Rather than `AdministratorAccess`, attach a policy scoped to the services this stack actually provisions: EC2/VPC networking, EKS + the managed node group, the cluster/node IAM roles and IRSA OIDC provider, the EKS secrets-encryption KMS key, and control-plane CloudWatch logs. Save this as `deployer-policy.json`:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "NetworkingAndCompute",
+         "Effect": "Allow",
+         "Action": [
+           "ec2:*",
+           "autoscaling:Describe*",
+           "autoscaling:CreateOrUpdateTags",
+           "autoscaling:DeleteTags"
+         ],
+         "Resource": "*"
+       },
+       {
+         "Sid": "EKS",
+         "Effect": "Allow",
+         "Action": "eks:*",
+         "Resource": "*"
+       },
+       {
+         "Sid": "IAMClusterNodeAndIRSARoles",
+         "Effect": "Allow",
+         "Action": [
+           "iam:CreateRole",
+           "iam:DeleteRole",
+           "iam:GetRole",
+           "iam:ListRolePolicies",
+           "iam:ListAttachedRolePolicies",
+           "iam:ListInstanceProfilesForRole",
+           "iam:AttachRolePolicy",
+           "iam:DetachRolePolicy",
+           "iam:PutRolePolicy",
+           "iam:DeleteRolePolicy",
+           "iam:GetRolePolicy",
+           "iam:PassRole",
+           "iam:TagRole",
+           "iam:UntagRole",
+           "iam:CreatePolicy",
+           "iam:DeletePolicy",
+           "iam:GetPolicy",
+           "iam:GetPolicyVersion",
+           "iam:ListPolicyVersions",
+           "iam:CreatePolicyVersion",
+           "iam:DeletePolicyVersion",
+           "iam:CreateInstanceProfile",
+           "iam:DeleteInstanceProfile",
+           "iam:GetInstanceProfile",
+           "iam:AddRoleToInstanceProfile",
+           "iam:RemoveRoleFromInstanceProfile",
+           "iam:TagInstanceProfile",
+           "iam:CreateOpenIDConnectProvider",
+           "iam:DeleteOpenIDConnectProvider",
+           "iam:GetOpenIDConnectProvider",
+           "iam:TagOpenIDConnectProvider",
+           "iam:CreateServiceLinkedRole"
+         ],
+         "Resource": "*"
+       },
+       {
+         "Sid": "SecretsEncryptionKMS",
+         "Effect": "Allow",
+         "Action": [
+           "kms:CreateKey",
+           "kms:CreateAlias",
+           "kms:DeleteAlias",
+           "kms:DescribeKey",
+           "kms:GetKeyPolicy",
+           "kms:GetKeyRotationStatus",
+           "kms:ListAliases",
+           "kms:ListResourceTags",
+           "kms:PutKeyPolicy",
+           "kms:EnableKeyRotation",
+           "kms:ScheduleKeyDeletion",
+           "kms:CreateGrant",
+           "kms:TagResource",
+           "kms:UntagResource"
+         ],
+         "Resource": "*"
+       },
+       {
+         "Sid": "ControlPlaneLogging",
+         "Effect": "Allow",
+         "Action": [
+           "logs:CreateLogGroup",
+           "logs:DeleteLogGroup",
+           "logs:DescribeLogGroups",
+           "logs:PutRetentionPolicy",
+           "logs:ListTagsForResource",
+           "logs:TagResource",
+           "logs:UntagResource"
+         ],
+         "Resource": "*"
+       },
+       {
+         "Sid": "Identity",
+         "Effect": "Allow",
+         "Action": "sts:GetCallerIdentity",
+         "Resource": "*"
+       }
+     ]
+   }
+   ```
+   Then create the role and attach the policy inline:
    ```bash
    aws iam create-role \
      --role-name keda-gpu-scaler-e2e \
      --assume-role-policy-document file://trust-policy.json
 
-   aws iam attach-role-policy \
+   aws iam put-role-policy \
      --role-name keda-gpu-scaler-e2e \
-     --policy-arn arn:aws:iam::aws:policy/AdministratorAccess  # tighten before real use
+     --policy-name keda-gpu-scaler-e2e-deployer \
+     --policy-document file://deployer-policy.json
    ```
+   This is scoped by **service + action** — it drops everything `AdministratorAccess` would grant outside these services (no S3, RDS, billing, Organizations, etc.). It is **not** scoped per-resource-ARN: the cluster, roles, and KMS key names are generated during `apply`, so ARN-level conditions aren't practical for a from-scratch build. To tighten further, replace `ec2:*`/`eks:*` with explicit action lists; if a first `apply` returns an `AccessDenied`, add the named action and re-run.
 
 4. **Store the role ARN and region** in the repo:
    - Secret `AWS_E2E_ROLE_ARN` = the role's ARN.
