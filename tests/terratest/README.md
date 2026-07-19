@@ -68,7 +68,7 @@ All variables are optional unless marked **required**.
 | Variable | Cloud | Default | Notes |
 |----------|-------|---------|-------|
 | `E2E_CLUSTER_NAME` | All | `keda-gpu-scaler-e2e-<suffix>` | Full cluster name; CI sets it unique per run. `GITHUB_RUN_ID` used as suffix when set. |
-| `E2E_K8S_VERSION` | All | — | Kubernetes version for the cluster. |
+| `E2E_K8S_VERSION` | All | `1.33` | Kubernetes version for the cluster. |
 | `E2E_SCALER_IMAGE_REPOSITORY` | All | `ghcr.io/pmady/keda-gpu-scaler` | Container image repository for keda-gpu-scaler. |
 | `E2E_SCALER_IMAGE_TAG` | All | `v0.5.0` | Container image tag for keda-gpu-scaler. |
 | `E2E_HELM_TIMEOUT` | All | Cloud-specific (see below) | Helm chart deployment timeout. |
@@ -315,18 +315,36 @@ These two trigger types present **different OIDC subjects** to the cloud provide
      }'
    ```
 
-3. **Grant the app access to the subscription.** `Contributor` covers most of the stack; add `User Access Administrator` too if the stack creates its own role assignments (e.g. AKS-managed identity bindings):
+3. **Grant the app access via a custom role.** This stack creates only a resource group and an AKS cluster with a **system-assigned** identity (no custom VNet, no `azurerm_role_assignment`), so it needs neither broad `Contributor` nor `User Access Administrator`. Define a role scoped to just those providers — save as `azure-deployer-role.json`:
+   ```json
+   {
+     "Name": "keda-gpu-scaler-e2e-deployer",
+     "IsCustom": true,
+     "Description": "Deploy the keda-gpu-scaler AKS e2e stack: a resource group and an AKS cluster with a system-assigned identity.",
+     "Actions": [
+       "Microsoft.Resources/subscriptions/read",
+       "Microsoft.Resources/subscriptions/resourceGroups/read",
+       "Microsoft.Resources/subscriptions/resourceGroups/write",
+       "Microsoft.Resources/subscriptions/resourceGroups/delete",
+       "Microsoft.ContainerService/managedClusters/*",
+       "Microsoft.ContainerService/locations/*/read"
+     ],
+     "NotActions": [],
+     "DataActions": [],
+     "NotDataActions": [],
+     "AssignableScopes": ["/subscriptions/<SUBSCRIPTION_ID>"]
+   }
+   ```
+   Create the role and assign it to the app:
    ```bash
-   az role assignment create \
-     --assignee <APP_CLIENT_ID> \
-     --role Contributor \
-     --scope /subscriptions/<SUBSCRIPTION_ID>
+   az role definition create --role-definition azure-deployer-role.json
 
    az role assignment create \
      --assignee <APP_CLIENT_ID> \
-     --role "User Access Administrator" \
+     --role "keda-gpu-scaler-e2e-deployer" \
      --scope /subscriptions/<SUBSCRIPTION_ID>
    ```
+   Add `Microsoft.Authorization/roleAssignments/write` (or the built-in `User Access Administrator`) only if you later introduce a custom VNet or explicit `azurerm_role_assignment` resources — the current stack needs neither.
 
 4. **Store as secrets:** `AZURE_E2E_CLIENT_ID`, `AZURE_E2E_TENANT_ID`, `AZURE_E2E_SUBSCRIPTION_ID`.
 
@@ -348,18 +366,19 @@ These two trigger types present **different OIDC subjects** to the cloud provide
      --attribute-condition="assertion.repository == 'jasonp2323/keda-gpu-scaler'"
    ```
 
-2. **Create a service account** with the roles the stack needs. Start with `container.admin`, `compute.admin`, `iam.serviceAccountUser`, then scope down for real use:
+2. **Create a service account** with roles scoped to what the stack provisions — GKE (`container.admin`), the custom VPC + subnet (`compute.networkAdmin`, far narrower than `compute.admin`), and permission to attach the default node service account (`iam.serviceAccountUser`):
    ```bash
    gcloud iam service-accounts create keda-gpu-scaler-e2e \
      --project=<PROJECT_ID> \
      --display-name="keda-gpu-scaler e2e"
 
-   for role in roles/container.admin roles/compute.admin roles/iam.serviceAccountUser; do
+   for role in roles/container.admin roles/compute.networkAdmin roles/iam.serviceAccountUser; do
      gcloud projects add-iam-policy-binding <PROJECT_ID> \
        --member="serviceAccount:keda-gpu-scaler-e2e@<PROJECT_ID>.iam.gserviceaccount.com" \
        --role="$role"
    done
    ```
+   `container.admin` is already GKE-scoped and `compute.networkAdmin` covers only the VPC network/subnetwork the stack creates — GKE provisions the node VMs via its own service agent, so `compute.admin` isn't needed. Add `roles/iam.serviceAccountAdmin` only if you change the stack to create its own node service account.
 
 3. **Bind the pool to impersonate the service account**, scoped to this repo:
    ```bash
