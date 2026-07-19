@@ -549,3 +549,16 @@ but that workflow is **manual and gated, not automatic** — `workflow_dispatch`
 only, requiring a `confirm_cost` input and a GitHub Environment approval gate —
 because every run provisions and bills real GPU hardware, same as running
 `terraform apply` by hand.
+
+## Bootstrap and remote state
+
+Each cloud has a run-once `infra/terraform/<cloud>/bootstrap/` config (local
+state) that provisions the **remote Terraform state backend** (S3 + DynamoDB /
+storage account + container / GCS bucket) and the **GitHub OIDC** provider,
+deployer role/app/service account, and least-privilege permissions the CI
+workflows use. The main stacks carry a partial backend block; state is keyed
+per run (`e2e/<cloud>/<cluster_name>.tfstate`). Apply the bootstrap once, wire
+its outputs into the GitHub secrets/variables, then the stacks and the Terratest
+suite use the remote backend. See
+[`tests/terratest/README.md`](../../tests/terratest/README.md) for the full
+bootstrap + OIDC walkthrough.

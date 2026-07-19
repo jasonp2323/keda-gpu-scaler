@@ -1,0 +1,9 @@
+region             = "us-east-2"
+github_repository  = "jasonp2323/keda-gpu-scaler"
+
+# Bucket names are global across all of S3 - pick something unique.
+state_bucket_name     = "keda-gpu-scaler-tf-state-<unique-suffix>"
+state_lock_table_name = "keda-gpu-scaler-tf-lock"
+
+role_name    = "keda-gpu-scaler-e2e"
+environments = ["e2e-aws"]

@@ -1,0 +1,14 @@
+# Run-once bootstrap. Copy to terraform.tfvars and override at least
+# state_storage_account_name (must be globally unique). See README.md before
+# applying.
+
+# subscription_id = "00000000-0000-0000-0000-000000000000"
+
+location          = "eastus"
+github_repository = "jasonp2323/keda-gpu-scaler"
+app_display_name  = "keda-gpu-scaler-e2e"
+environments      = ["e2e-azure"]
+
+state_resource_group_name  = "keda-gpu-scaler-tfstate-rg"
+state_storage_account_name = "kedagpuscalertfstate" # CHANGE ME: must be globally unique
+state_container_name       = "tfstate"
