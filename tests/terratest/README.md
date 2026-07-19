@@ -107,9 +107,172 @@ terraform destroy
 
 - **Trigger:** `.github/workflows/e2e-cloud.yaml` via `workflow_dispatch` (manual, gated).
 - **Inputs:** Select cloud(s); type `RUN` in the cost-confirm input.
-- **Auth:** Uses OIDC/federated cloud auth — no long-lived keys stored.
+- **Auth:** Uses OIDC/federated cloud auth — no long-lived keys stored. See [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup).
 - **Scope:** Intentionally NOT run on every PR/push, matching the repo's "infra CI is manual only" stance.
 - **Approval:** Each cloud has a per-cloud GitHub Environment requiring approval before running.
+
+## OIDC / Cloud Authentication Setup
+
+CI never stores long-lived cloud keys. Instead, GitHub Actions mints a short-lived OIDC token per job and exchanges it for temporary cloud credentials (AWS `AssumeRoleWithWebIdentity`, Azure federated credential, GCP Workload Identity Federation). This section is the one-time setup a maintainer runs per cloud account.
+
+Two workflows consume these credentials:
+- `.github/workflows/e2e-cloud.yaml` — the e2e apply/destroy jobs, gated by a GitHub **Environment** (`e2e-aws` / `e2e-azure` / `e2e-gcp`).
+- `.github/workflows/infra-validate.yaml` — the advisory `plan-*` jobs, triggered on `pull_request` with **no Environment**.
+
+These two trigger types present **different OIDC subjects** to the cloud provider, so trust policies/federated credentials must allow both if the plan jobs are also meant to authenticate.
+
+### AWS
+
+1. **Create the GitHub OIDC provider** in the target AWS account (once per account):
+   ```bash
+   aws iam create-open-id-connect-provider \
+     --url https://token.actions.githubusercontent.com \
+     --client-id-list sts.amazonaws.com \
+     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+   ```
+
+2. **Create an IAM role** federated to that provider. The subject differs by workflow:
+   - `e2e-cloud.yaml` (Environment `e2e-aws`): `repo:jasonp2323/keda-gpu-scaler:environment:e2e-aws`
+   - `infra-validate.yaml` (`plan-aws`, no Environment): `repo:jasonp2323/keda-gpu-scaler:pull_request`
+
+   Trust policy allowing both:
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": {
+           "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+           "StringEquals": {
+             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+           },
+           "StringLike": {
+             "token.actions.githubusercontent.com:sub": [
+               "repo:jasonp2323/keda-gpu-scaler:environment:e2e-aws",
+               "repo:jasonp2323/keda-gpu-scaler:pull_request"
+             ]
+           }
+         }
+       }
+     ]
+   }
+   ```
+   (Broader alternative if preferred: `"repo:jasonp2323/keda-gpu-scaler:*"` in place of the two explicit subjects.)
+
+3. **Attach a permissions policy** covering what the stack provisions — EKS, EC2/VPC, IAM role/instance-profile creation, Auto Scaling, ELB. Start from AWS-managed policies for a working baseline, then scope down to least privilege for real use:
+   ```bash
+   aws iam create-role \
+     --role-name keda-gpu-scaler-e2e \
+     --assume-role-policy-document file://trust-policy.json
+
+   aws iam attach-role-policy \
+     --role-name keda-gpu-scaler-e2e \
+     --policy-arn arn:aws:iam::aws:policy/AdministratorAccess  # tighten before real use
+   ```
+
+4. **Store the role ARN and region** in the repo:
+   - Secret `AWS_E2E_ROLE_ARN` = the role's ARN.
+   - Variable `AWS_E2E_REGION` = target region (e.g. `us-east-2`).
+
+### Azure
+
+1. **Create an app registration** (or user-assigned managed identity) and note its client ID and tenant ID:
+   ```bash
+   az ad app create --display-name keda-gpu-scaler-e2e
+   az ad sp create --id <APP_CLIENT_ID>
+   ```
+
+2. **Add federated credentials** on the app — one per subject that needs to authenticate:
+   ```bash
+   az ad app federated-credential create \
+     --id <APP_OBJECT_ID> \
+     --parameters '{
+       "name": "e2e-azure-environment",
+       "issuer": "https://token.actions.githubusercontent.com",
+       "subject": "repo:jasonp2323/keda-gpu-scaler:environment:e2e-azure",
+       "audiences": ["api://AzureADTokenExchange"]
+     }'
+
+   # Optional: also let infra-validate's plan-azure job (no Environment) authenticate
+   az ad app federated-credential create \
+     --id <APP_OBJECT_ID> \
+     --parameters '{
+       "name": "e2e-azure-pull-request",
+       "issuer": "https://token.actions.githubusercontent.com",
+       "subject": "repo:jasonp2323/keda-gpu-scaler:pull_request",
+       "audiences": ["api://AzureADTokenExchange"]
+     }'
+   ```
+
+3. **Grant the app access to the subscription.** `Contributor` covers most of the stack; add `User Access Administrator` too if the stack creates its own role assignments (e.g. AKS-managed identity bindings):
+   ```bash
+   az role assignment create \
+     --assignee <APP_CLIENT_ID> \
+     --role Contributor \
+     --scope /subscriptions/<SUBSCRIPTION_ID>
+
+   az role assignment create \
+     --assignee <APP_CLIENT_ID> \
+     --role "User Access Administrator" \
+     --scope /subscriptions/<SUBSCRIPTION_ID>
+   ```
+
+4. **Store as secrets:** `AZURE_E2E_CLIENT_ID`, `AZURE_E2E_TENANT_ID`, `AZURE_E2E_SUBSCRIPTION_ID`.
+
+### GCP
+
+1. **Create a Workload Identity Pool and OIDC provider**, restricted to this repo via an attribute condition:
+   ```bash
+   gcloud iam workload-identity-pools create keda-gpu-scaler-pool \
+     --project=<PROJECT_ID> \
+     --location=global \
+     --display-name="keda-gpu-scaler e2e"
+
+   gcloud iam workload-identity-pools providers create-oidc keda-gpu-scaler-provider \
+     --project=<PROJECT_ID> \
+     --location=global \
+     --workload-identity-pool=keda-gpu-scaler-pool \
+     --issuer-uri="https://token.actions.githubusercontent.com" \
+     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+     --attribute-condition="assertion.repository == 'jasonp2323/keda-gpu-scaler'"
+   ```
+
+2. **Create a service account** with the roles the stack needs. Start with `container.admin`, `compute.admin`, `iam.serviceAccountUser`, then scope down for real use:
+   ```bash
+   gcloud iam service-accounts create keda-gpu-scaler-e2e \
+     --project=<PROJECT_ID> \
+     --display-name="keda-gpu-scaler e2e"
+
+   for role in roles/container.admin roles/compute.admin roles/iam.serviceAccountUser; do
+     gcloud projects add-iam-policy-binding <PROJECT_ID> \
+       --member="serviceAccount:keda-gpu-scaler-e2e@<PROJECT_ID>.iam.gserviceaccount.com" \
+       --role="$role"
+   done
+   ```
+
+3. **Bind the pool to impersonate the service account**, scoped to this repo:
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding \
+     keda-gpu-scaler-e2e@<PROJECT_ID>.iam.gserviceaccount.com \
+     --project=<PROJECT_ID> \
+     --role=roles/iam.workloadIdentityUser \
+     --member="principalSet://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/keda-gpu-scaler-pool/attribute.repository/jasonp2323/keda-gpu-scaler"
+   ```
+
+4. **Store:**
+   - Secret `GCP_E2E_WIF_PROVIDER` = full provider resource name (`projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/keda-gpu-scaler-pool/providers/keda-gpu-scaler-provider`).
+   - Secret `GCP_E2E_SERVICE_ACCOUNT` = `keda-gpu-scaler-e2e@<PROJECT_ID>.iam.gserviceaccount.com`.
+   - Variable `GCP_E2E_PROJECT` = `<PROJECT_ID>`.
+
+### GitHub side
+
+- Add all secrets/variables above under **Settings → Secrets and variables → Actions** (secrets for credentials, variables for the non-secret region/project values).
+- Create the three GitHub **Environments** — `e2e-aws`, `e2e-azure`, `e2e-gcp` — under **Settings → Environments**, and add required reviewers to each. This is what the manual `RUN` confirmation in `e2e-cloud.yaml` actually gates.
+- The credential-less gates (`fmt`, `validate`, `tflint`, `checkov`) need none of this setup — only the `plan-*` jobs and the e2e apply/destroy jobs authenticate to a cloud.
 
 ## Coverage Note
 
