@@ -18,6 +18,19 @@ func TestAWSGPUScalerE2E(t *testing.T) {
 	// E2E_CLUSTER_NAME is the full name (CI makes it unique per run); local runs get a suffixed default.
 	clusterName := envOrDefault("E2E_CLUSTER_NAME", "keda-gpu-scaler-e2e-"+clusterSuffix())
 
+	// Remote S3 backend (created by infra/terraform/aws/bootstrap); state key is unique per cluster.
+	stateBucket := envOrDefault("E2E_AWS_STATE_BUCKET", "")
+	if stateBucket == "" {
+		t.Fatal("E2E_AWS_STATE_BUCKET must be set — run infra/terraform/aws/bootstrap and use its state_bucket output")
+	}
+	backendConfig := map[string]interface{}{
+		"bucket":         stateBucket,
+		"key":            "e2e/aws/" + clusterName + ".tfstate",
+		"region":         envOrDefault("AWS_REGION", "us-east-2"),
+		"dynamodb_table": envOrDefault("E2E_AWS_STATE_LOCK_TABLE", "keda-gpu-scaler-tf-lock"),
+		"encrypt":        true,
+	}
+
 	vars := map[string]interface{}{
 		"region":                  envOrDefault("AWS_REGION", "us-east-2"),
 		"cluster_name":            clusterName,
@@ -37,6 +50,7 @@ func TestAWSGPUScalerE2E(t *testing.T) {
 		terraformDir:      terraformDir,
 		vars:              vars,
 		envVars:           map[string]string{},
+		backendConfig:     backendConfig,
 		scalerReleaseName: "keda-gpu-scaler",
 	})
 }

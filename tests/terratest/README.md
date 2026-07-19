@@ -61,6 +61,20 @@ make test-terratest-gcp
   - **Azure:** NC/ND/NV VM-family vCPU quota in the target location.
   - **GCP:** Global GPU quota + per-region, per-type GPU quota.
 
+## Bootstrap (run once per cloud)
+
+Each cloud has an `infra/terraform/<cloud>/bootstrap/` config that you apply **once** (it uses local state) to create the prerequisites the pipeline depends on:
+
+1. the **remote Terraform state backend** — an S3 bucket + DynamoDB lock table (AWS), a storage account + container (Azure), or a GCS bucket (GCP); and
+2. the **GitHub OIDC** identity provider, deployer role/app/service account, and the least-privilege permissions documented under [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup) (the bootstrap automates that setup; the manual steps there are the underlying reference).
+
+After `terraform apply` in a bootstrap dir:
+
+- Put its OIDC outputs into the GitHub secrets/variables (`*_ROLE_ARN` / `*_CLIENT_ID` / `*_WIF_PROVIDER`, etc.).
+- Put its state-backend outputs into the `E2E_*_STATE_*` variables (see the table below) so CI — and the tests — can reach the backend.
+
+The main stacks carry a **partial** backend block (`backend "s3"/"azurerm"/"gcs" {}`); the tests supply the bucket/key at init via these variables, keyed per run. This means the bootstrap must be applied before the suite can run (locally or in CI).
+
 ## Configuration (Environment Variables)
 
 All variables are optional unless marked **required**.
@@ -87,6 +101,14 @@ All variables are optional unless marked **required**.
 | `E2E_GPU_MACHINE_TYPE` | GCP | `n1-standard-4` | GCP machine type for GPU node. |
 | `E2E_GPU_TYPE` | GCP | `nvidia-tesla-t4` | GCP GPU type. |
 | `E2E_HELM_TIMEOUT` | GCP | `1800` | Helm timeout in seconds (30 min). |
+| `E2E_AWS_STATE_BUCKET` | AWS | — | **REQUIRED (remote backend).** S3 bucket — `aws/bootstrap` `state_bucket` output. |
+| `E2E_AWS_STATE_LOCK_TABLE` | AWS | `keda-gpu-scaler-tf-lock` | DynamoDB lock table — `aws/bootstrap` `state_lock_table` output. |
+| `E2E_AZURE_STATE_RESOURCE_GROUP` | Azure | — | **REQUIRED (remote backend).** State resource group — `azure/bootstrap` output. |
+| `E2E_AZURE_STATE_STORAGE_ACCOUNT` | Azure | — | **REQUIRED (remote backend).** State storage account — `azure/bootstrap` output. |
+| `E2E_AZURE_STATE_CONTAINER` | Azure | `tfstate` | Blob container — `azure/bootstrap` output. |
+| `E2E_GCP_STATE_BUCKET` | GCP | — | **REQUIRED (remote backend).** GCS bucket — `gcp/bootstrap` `state_bucket` output. |
+
+The state key is derived per run as `e2e/<cloud>/<cluster_name>.tfstate` (GCS uses prefix `e2e/gcp/<cluster_name>`), so concurrent runs with unique cluster names never collide on state.
 
 ## Cost & Teardown ⚠️
 

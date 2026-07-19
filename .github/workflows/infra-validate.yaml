@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cloud: [aws, azure, gcp]
+        cloud: [aws, azure, gcp, aws/bootstrap, azure/bootstrap, gcp/bootstrap]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -74,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cloud: [aws, azure, gcp]
+        cloud: [aws, azure, gcp, aws/bootstrap, azure/bootstrap, gcp/bootstrap]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -155,7 +155,15 @@ jobs:
           aws-region: ${{ vars.AWS_E2E_REGION }}
 
       - name: terraform init
-        run: terraform -chdir=infra/terraform/aws init -input=false
+        # Partial backend now requires config at init. Use a plan-specific state
+        # key so advisory plans never touch the e2e run state.
+        run: |
+          terraform -chdir=infra/terraform/aws init -input=false \
+            -backend-config="bucket=${{ vars.AWS_E2E_STATE_BUCKET }}" \
+            -backend-config="key=plan/aws/${{ github.run_id }}.tfstate" \
+            -backend-config="region=${{ vars.AWS_E2E_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.AWS_E2E_STATE_LOCK_TABLE }}" \
+            -backend-config="encrypt=true"
 
       - name: terraform plan
         run: terraform -chdir=infra/terraform/aws plan -input=false -lock=false
@@ -188,7 +196,14 @@ jobs:
       - name: terraform init
         env:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
-        run: terraform -chdir=infra/terraform/azure init -input=false
+        # Partial backend now requires config at init. Use a plan-specific state
+        # key so advisory plans never touch the e2e run state.
+        run: |
+          terraform -chdir=infra/terraform/azure init -input=false \
+            -backend-config="resource_group_name=${{ vars.AZURE_E2E_STATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.AZURE_E2E_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.AZURE_E2E_STATE_CONTAINER || 'tfstate' }}" \
+            -backend-config="key=plan/azure/${{ github.run_id }}.tfstate"
 
       - name: terraform plan
         env:
@@ -229,7 +244,12 @@ jobs:
           service_account: ${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}
 
       - name: terraform init
-        run: terraform -chdir=infra/terraform/gcp init -input=false
+        # Partial backend now requires config at init. Use a plan-specific state
+        # prefix so advisory plans never touch the e2e run state.
+        run: |
+          terraform -chdir=infra/terraform/gcp init -input=false \
+            -backend-config="bucket=${{ vars.GCP_E2E_STATE_BUCKET }}" \
+            -backend-config="prefix=plan/gcp/${{ github.run_id }}"
 
       - name: terraform plan
         run: terraform -chdir=infra/terraform/gcp plan -input=false -lock=false

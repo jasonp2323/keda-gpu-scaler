@@ -24,6 +24,16 @@ func TestGCPGPUScalerE2E(t *testing.T) {
 	// E2E_CLUSTER_NAME is the full name (CI makes it unique per run); local runs get a suffixed default.
 	clusterName := envOrDefault("E2E_CLUSTER_NAME", "keda-gpu-scaler-e2e-"+clusterSuffix())
 
+	// Remote GCS backend (created by infra/terraform/gcp/bootstrap); state prefix is unique per cluster.
+	stateBucket := envOrDefault("E2E_GCP_STATE_BUCKET", "")
+	if stateBucket == "" {
+		t.Fatal("E2E_GCP_STATE_BUCKET must be set — run infra/terraform/gcp/bootstrap and use its state_bucket output")
+	}
+	backendConfig := map[string]interface{}{
+		"bucket": stateBucket,
+		"prefix": "e2e/gcp/" + clusterName,
+	}
+
 	vars := map[string]interface{}{
 		"project_id":              projectID,
 		"region":                  envOrDefault("E2E_GCP_REGION", "us-central1"),
@@ -47,6 +57,7 @@ func TestGCPGPUScalerE2E(t *testing.T) {
 		terraformDir:      terraformDir,
 		vars:              vars,
 		envVars:           map[string]string{},
+		backendConfig:     backendConfig,
 		scalerReleaseName: "keda-gpu-scaler",
 	})
 }

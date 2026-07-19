@@ -38,7 +38,8 @@ type gpuScalerE2E struct {
 	terraformDir      string // absolute path to infra/terraform/<cloud>
 	vars              map[string]interface{}
 	envVars           map[string]string
-	scalerReleaseName string // helm release name for the keda-gpu-scaler chart (DaemonSet name == release name)
+	backendConfig     map[string]interface{} // partial-backend config (bucket/key/etc.); state key is unique per run
+	scalerReleaseName string                 // helm release name for the keda-gpu-scaler chart (DaemonSet name == release name)
 }
 
 // runGPUScalerE2E drives the full shared flow. Cloud-specific test files just build cfg and call this.
@@ -47,10 +48,11 @@ func runGPUScalerE2E(cfg gpuScalerE2E) {
 	t.Helper()
 
 	opts := &terraform.Options{
-		TerraformDir: cfg.terraformDir,
-		Vars:         cfg.vars,
-		EnvVars:      cfg.envVars,
-		NoColor:      true,
+		TerraformDir:  cfg.terraformDir,
+		Vars:          cfg.vars,
+		EnvVars:       cfg.envVars,
+		BackendConfig: cfg.backendConfig, // supplies the partial s3/azurerm/gcs backend at init
+		NoColor:       true,
 	}
 
 	defer terraform.Destroy(t, opts)

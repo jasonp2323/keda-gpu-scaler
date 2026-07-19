@@ -80,6 +80,9 @@ jobs:
       E2E_SCALER_IMAGE_REPOSITORY: ghcr.io/pmady/keda-gpu-scaler
       E2E_SCALER_IMAGE_TAG: v0.5.0
       E2E_HELM_TIMEOUT: '900'
+      # Remote state backend created by infra/terraform/aws/bootstrap.
+      E2E_AWS_STATE_BUCKET: ${{ vars.AWS_E2E_STATE_BUCKET }}
+      E2E_AWS_STATE_LOCK_TABLE: ${{ vars.AWS_E2E_STATE_LOCK_TABLE }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -121,7 +124,15 @@ jobs:
           TF_VAR_gpu_node_count: ${{ env.E2E_GPU_NODE_COUNT }}
           TF_VAR_scaler_image_repository: ${{ env.E2E_SCALER_IMAGE_REPOSITORY }}
           TF_VAR_helm_timeout: ${{ env.E2E_HELM_TIMEOUT }}
-        run: terraform -chdir=infra/terraform/aws destroy -auto-approve
+        # Re-init the remote backend to the same state key the test used, then destroy.
+        run: |
+          terraform -chdir=infra/terraform/aws init -reconfigure -input=false \
+            -backend-config="bucket=${E2E_AWS_STATE_BUCKET}" \
+            -backend-config="key=e2e/aws/${E2E_CLUSTER_NAME}.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${E2E_AWS_STATE_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform -chdir=infra/terraform/aws destroy -auto-approve
 
   e2e-azure:
     if: inputs.confirm_cost == 'RUN' && (inputs.clouds == 'azure' || inputs.clouds == 'all')
@@ -143,6 +154,10 @@ jobs:
       E2E_K8S_VERSION: '1.33'
       E2E_SCALER_IMAGE_TAG: v0.5.0
       E2E_HELM_TIMEOUT: '900'
+      # Remote state backend created by infra/terraform/azure/bootstrap.
+      E2E_AZURE_STATE_RESOURCE_GROUP: ${{ vars.AZURE_E2E_STATE_RESOURCE_GROUP }}
+      E2E_AZURE_STATE_STORAGE_ACCOUNT: ${{ vars.AZURE_E2E_STATE_STORAGE_ACCOUNT }}
+      E2E_AZURE_STATE_CONTAINER: ${{ vars.AZURE_E2E_STATE_CONTAINER }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -182,7 +197,14 @@ jobs:
           TF_VAR_cluster_name: ${{ env.E2E_CLUSTER_NAME }}
           TF_VAR_location: ${{ env.E2E_AZURE_LOCATION }}
           TF_VAR_resource_group_name: ${{ env.E2E_AZURE_RESOURCE_GROUP }}
-        run: terraform -chdir=infra/terraform/azure destroy -auto-approve
+        # Re-init the remote backend to the same state key the test used, then destroy.
+        run: |
+          terraform -chdir=infra/terraform/azure init -reconfigure -input=false \
+            -backend-config="resource_group_name=${E2E_AZURE_STATE_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${E2E_AZURE_STATE_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${E2E_AZURE_STATE_CONTAINER:-tfstate}" \
+            -backend-config="key=e2e/azure/${E2E_CLUSTER_NAME}.tfstate"
+          terraform -chdir=infra/terraform/azure destroy -auto-approve
 
   e2e-gcp:
     if: inputs.confirm_cost == 'RUN' && (inputs.clouds == 'gcp' || inputs.clouds == 'all')
@@ -206,6 +228,8 @@ jobs:
       E2E_SCALER_IMAGE_REPOSITORY: ghcr.io/pmady/keda-gpu-scaler
       E2E_SCALER_IMAGE_TAG: v0.5.0
       E2E_HELM_TIMEOUT: '1800'
+      # Remote state backend created by infra/terraform/gcp/bootstrap.
+      E2E_GCP_STATE_BUCKET: ${{ vars.GCP_E2E_STATE_BUCKET }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -247,4 +271,9 @@ jobs:
           TF_VAR_labels: '{}'
           TF_VAR_scaler_image_repository: ${{ env.E2E_SCALER_IMAGE_REPOSITORY }}
           TF_VAR_helm_timeout: ${{ env.E2E_HELM_TIMEOUT }}
-        run: terraform -chdir=infra/terraform/gcp destroy -auto-approve
+        # Re-init the remote backend to the same state prefix the test used, then destroy.
+        run: |
+          terraform -chdir=infra/terraform/gcp init -reconfigure -input=false \
+            -backend-config="bucket=${E2E_GCP_STATE_BUCKET}" \
+            -backend-config="prefix=e2e/gcp/${E2E_CLUSTER_NAME}"
+          terraform -chdir=infra/terraform/gcp destroy -auto-approve
