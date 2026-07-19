@@ -134,7 +134,7 @@ jobs:
       # input. Values follow infra/terraform/aws/terraform.tfvars.example.
       TF_VAR_region: us-east-2
       TF_VAR_cluster_name: keda-gpu-scaler-ci-plan
-      TF_VAR_kubernetes_version: '1.35'
+      TF_VAR_kubernetes_version: '1.33'
       TF_VAR_tags: '{}'
       TF_VAR_gpu_instance_type: g5.xlarge
       TF_VAR_gpu_node_count: 1

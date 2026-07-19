@@ -21,7 +21,7 @@ func TestAWSGPUScalerE2E(t *testing.T) {
 	vars := map[string]interface{}{
 		"region":                  envOrDefault("AWS_REGION", "us-east-2"),
 		"cluster_name":            clusterName,
-		"kubernetes_version":      envOrDefault("E2E_K8S_VERSION", "1.35"),
+		"kubernetes_version":      envOrDefault("E2E_K8S_VERSION", "1.33"),
 		"gpu_instance_type":       envOrDefault("E2E_GPU_INSTANCE_TYPE", "g5.xlarge"),
 		"gpu_node_count":          1,
 		"helm_timeout":            envOrDefaultInt("E2E_HELM_TIMEOUT", 600),
