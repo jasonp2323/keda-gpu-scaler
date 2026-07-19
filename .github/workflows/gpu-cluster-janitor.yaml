@@ -390,6 +390,9 @@ jobs:
     permissions:
       contents: read
       issues: write
+    env:
+      # Presence of SMTP_SERVER gates the optional email step below.
+      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
     steps:
       - name: Open or update the janitor-failure issue
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
@@ -427,3 +430,22 @@ jobs:
                 labels: [label],
               });
             }
+
+      - name: Send failure email (optional)
+        # Skipped unless SMTP secrets are configured — the GitHub issue above is
+        # the always-on channel. To enable email, set the SMTP_SERVER, SMTP_PORT,
+        # SMTP_USERNAME, SMTP_PASSWORD secrets and the JANITOR_ALERT_EMAIL variable.
+        if: env.SMTP_SERVER != ''
+        uses: dawidd6/action-send-mail@2cea9617b09d79a095af21254fbcb7ae95903dde # v3.12.0
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          from: keda-gpu-scaler janitor <${{ secrets.SMTP_USERNAME }}>
+          to: ${{ vars.JANITOR_ALERT_EMAIL }}
+          subject: "[keda-gpu-scaler] GPU cluster janitor FAILED"
+          body: |
+            The GPU Cluster Janitor workflow failed — leaked GPU clusters may still be billing.
+
+            Failed run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
