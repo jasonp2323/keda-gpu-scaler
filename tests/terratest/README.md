@@ -107,6 +107,7 @@ All variables are optional unless marked **required**.
 | `E2E_AZURE_STATE_STORAGE_ACCOUNT` | Azure | — | **REQUIRED (remote backend).** State storage account — `azure/bootstrap` output. |
 | `E2E_AZURE_STATE_CONTAINER` | Azure | `tfstate` | Blob container — `azure/bootstrap` output. |
 | `E2E_GCP_STATE_BUCKET` | GCP | — | **REQUIRED (remote backend).** GCS bucket — `gcp/bootstrap` `state_bucket` output. |
+| `E2E_ARTIFACTS_DIR` | All | — | Directory the test writes failure diagnostics to. CI sets it and uploads the contents as an artifact; unset (local) means console-only. |
 
 The state key is derived per run as `e2e/<cloud>/<cluster_name>.tfstate` (GCS uses prefix `e2e/gcp/<cluster_name>`), so concurrent runs with unique cluster names never collide on state.
 
@@ -119,6 +120,8 @@ The state key is derived per run as `e2e/<cloud>/<cluster_name>.tfstate` (GCS us
 
 **Automatic teardown:** The test defers `terraform destroy`, which runs on exit (success or failure). The CI workflow adds a safety-net `terraform destroy` job if the test process is killed.
 
+**Leaked-cluster janitor:** `.github/workflows/gpu-cluster-janitor.yaml` runs every 3 hours (and on demand) and destroys any run whose remote state under `e2e/<cloud>/` is older than a TTL (default 6h) — a backstop for clusters that leaked when both the test's `defer` and the safety-net job failed. Manual runs default to `dry_run: true` (preview); the schedule reaps for real. If a janitor job fails systemically it opens a `janitor-failure` GitHub issue (and emails, when SMTP is configured) so a still-billing leak gets noticed.
+
 **Finding leftovers:** All resources are tagged `Project=keda-gpu-scaler` (GCP uses label `project=keda-gpu-scaler`). If a run is interrupted, find and destroy manually:
 ```bash
 cd infra/terraform/<cloud>
@@ -127,11 +130,16 @@ terraform destroy
 
 ## CI Workflow
 
-- **Trigger:** `.github/workflows/e2e-cloud.yaml` via `workflow_dispatch` (manual, gated).
-- **Inputs:** Select cloud(s); type `RUN` in the cost-confirm input.
-- **Auth:** Uses OIDC/federated cloud auth — no long-lived keys stored. See [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup).
-- **Scope:** Intentionally NOT run on every PR/push, matching the repo's "infra CI is manual only" stance.
+**`e2e-cloud.yaml`** — the apply-level suite:
+- **Trigger:** `workflow_dispatch` (manual, gated). Select cloud(s); type `RUN` in the cost-confirm input.
+- **Auth:** OIDC/federated cloud auth — no long-lived keys stored. See [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup).
 - **Approval:** Each cloud has a per-cloud GitHub Environment requiring approval before running.
+- **Diagnostics:** on failure the test dumps scaler pod logs, node status, `demo-app`/ScaledObject describe, and recent events (to `E2E_ARTIFACTS_DIR`); the job uploads those plus the full `go test` log as a build artifact (`if: always()`), so a failed run is debuggable after the fact.
+- **Scope:** Intentionally NOT run on every PR/push, matching the repo's "infra CI is manual only" stance.
+
+**Related workflows:**
+- **`infra-validate.yaml`** — cheap per-PR gates on `infra/terraform/**`: `terraform fmt`, `validate`, `tflint`, and `checkov` (blocking, credential-less), plus an advisory `plan`.
+- **`gpu-cluster-janitor.yaml`** — scheduled cost guardrail that reaps leaked clusters (see **Cost & Teardown**) and notifies via GitHub issue / email on failure.
 
 ## OIDC / Cloud Authentication Setup
 
@@ -421,6 +429,7 @@ These two trigger types present **different OIDC subjects** to the cloud provide
 - Add all secrets/variables above under **Settings → Secrets and variables → Actions** (secrets for credentials, variables for the non-secret region/project values).
 - Create the three GitHub **Environments** — `e2e-aws`, `e2e-azure`, `e2e-gcp` — under **Settings → Environments**, and add required reviewers to each. This is what the manual `RUN` confirmation in `e2e-cloud.yaml` actually gates.
 - The credential-less gates (`fmt`, `validate`, `tflint`, `checkov`) need none of this setup — only the `plan-*` jobs and the e2e apply/destroy jobs authenticate to a cloud.
+- **Janitor notifications:** the janitor opens a GitHub issue on failure, so **Issues must be enabled** on the repo (Settings → General → Features → Issues). For optional email alerts, also set the `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` secrets and the `JANITOR_ALERT_EMAIL` variable; without them the email step is skipped and only the issue is created.
 
 ## Coverage Note
 
