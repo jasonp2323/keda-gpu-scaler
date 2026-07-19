@@ -26,6 +26,12 @@
 # bucket/account/container repo vars used by the e2e suite's backends. Any
 # cloud whose state backend var is unset is skipped (exit 0) rather than
 # failing the job, so an un-bootstrapped cloud doesn't break the janitor.
+#
+# If a janitor job fails systemically (auth, state listing, terraform init —
+# not a single cluster's destroy, which is handled inline), the notify-failure
+# job opens or updates a GitHub issue labelled `janitor-failure` so leaked,
+# still-billing clusters get a human's attention. Requires Issues enabled on
+# the repo.
 name: GPU Cluster Janitor
 
 on:
@@ -53,7 +59,6 @@ permissions:
 
 jobs:
   janitor-aws:
-    continue-on-error: true
     timeout-minutes: 60
     runs-on: ubuntu-latest
     permissions:
@@ -155,7 +160,6 @@ jobs:
           echo "=== AWS janitor summary: found=${FOUND} destroyed=${DESTROYED} skipped=${SKIPPED} dry_run=${DRY_RUN} ==="
 
   janitor-azure:
-    continue-on-error: true
     timeout-minutes: 60
     runs-on: ubuntu-latest
     permissions:
@@ -258,7 +262,6 @@ jobs:
           echo "=== Azure janitor summary: found=${FOUND} destroyed=${DESTROYED} skipped=${SKIPPED} dry_run=${DRY_RUN} ==="
 
   janitor-gcp:
-    continue-on-error: true
     timeout-minutes: 60
     runs-on: ubuntu-latest
     permissions:
@@ -374,3 +377,53 @@ jobs:
           fi
 
           echo "=== GCP janitor summary: found=${FOUND} destroyed=${DESTROYED} skipped=${SKIPPED} dry_run=${DRY_RUN} ==="
+
+  # Runs only when a janitor job FAILED systemically (auth, state listing,
+  # terraform init — a single cluster's destroy failure is handled inline and
+  # does not fail its job). Opens a GitHub issue (or comments on the open one)
+  # so leaked GPU clusters that weren't reaped don't keep billing unnoticed.
+  # Requires Issues to be enabled on the repository.
+  notify-failure:
+    needs: [janitor-aws, janitor-azure, janitor-gcp]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open or update the janitor-failure issue
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const label = 'janitor-failure';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              'The **GPU Cluster Janitor** workflow failed — leaked GPU clusters may still be billing.',
+              '',
+              `Failed run: ${runUrl}`,
+              '',
+              'Next steps: check which cloud job failed, then reap manually (run the workflow via workflow_dispatch with `dry_run: false`) or fix the OIDC / state-backend config.',
+            ].join('\n');
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 1,
+            });
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: 'GPU cluster janitor failed',
+                body,
+                labels: [label],
+              });
+            }
