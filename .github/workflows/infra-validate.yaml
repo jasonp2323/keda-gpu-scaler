@@ -16,7 +16,16 @@
 #     cluster endpoint that only exists AFTER `apply` — a fresh, stateless
 #     `terraform plan` against an empty state can legitimately fail or defer
 #     those resources. Reviewers should still read plan output when it
-#     succeeds; a failure here just means "inconclusive," not "broken."
+#     succeeds; a failure here just means "inconclusive," not "broken." Each
+#     plan job also uploads a plan artifact/diagnostics, posts a digest and
+#     change table to the job summary, and updates a single PR comment (per
+#     cloud) in place across pushes.
+#   - cost: PR-only, credential-less (Infracost parses HCL statically) advisory
+#     matrix over the three clouds. Posts/refreshes one cost comment per cloud
+#     and a job-summary breakdown.
+#   - docs: PR-only, single job (not matrixed, to avoid racing pushes) that
+#     regenerates each stack's terraform-docs block in place and pushes the
+#     change back to the PR branch if anything changed.
 name: Infra Validate
 
 on:
@@ -121,6 +130,13 @@ jobs:
   # to code correctness. So: read the plan output when it succeeds, but a
   # failure must not block the PR — no `environment:` approval gate is used
   # here either, since plan is read-only/cheap (unlike apply in e2e-cloud.yaml).
+  #
+  # Every plan run also (regardless of plan success/failure, via `if: always()`):
+  #   1. Uploads the binary plan (plan.out) as an artifact.
+  #   2. Runs tf-summarize over the plan and appends a digest to the job summary.
+  #   3. Uploads TF_LOG debug logs + the human-readable plan text as artifacts.
+  #   4. Appends a plan/change-table job summary.
+  #   5. Creates/updates (in place) a single PR comment per cloud with the plan.
   plan-aws:
     name: terraform plan (aws, advisory)
     runs-on: ubuntu-latest
@@ -128,6 +144,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
     env:
       # Placeholders for the variables in infra/terraform/aws/variables.tf
       # that have no default, so init/plan never blocks on interactive var
@@ -155,6 +172,9 @@ jobs:
           aws-region: ${{ vars.AWS_E2E_REGION }}
 
       - name: terraform init
+        env:
+          TF_LOG: DEBUG
+          TF_LOG_PATH: ${{ github.workspace }}/tf-diag-aws-init.log
         # Partial backend now requires config at init. Use a plan-specific state
         # key so advisory plans never touch the e2e run state.
         run: |
@@ -166,7 +186,172 @@ jobs:
             -backend-config="encrypt=true"
 
       - name: terraform plan
-        run: terraform -chdir=infra/terraform/aws plan -input=false -lock=false
+        id: plan
+        env:
+          TF_LOG: DEBUG
+          TF_LOG_PATH: ${{ github.workspace }}/tf-diag-aws-plan.log
+        run: |
+          set +e
+          terraform -chdir=infra/terraform/aws plan -input=false -lock=false -no-color -out=plan.out 2>&1 | tee infra/terraform/aws/plan.txt
+          code=${PIPESTATUS[0]}
+          echo "plan exit: ${code}"
+          exit 0   # advisory job — never fail here
+
+      - name: Upload plan artifact (aws)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tfplan-aws-${{ github.sha }}
+          path: infra/terraform/aws/plan.out
+          retention-days: 5
+          if-no-files-found: ignore
+
+      - name: Plan digest (aws, tf-summarize)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -f infra/terraform/aws/plan.out ] || { echo "no plan.out; skipping"; exit 0; }
+          ver=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" https://api.github.com/repos/dineshba/terraform-plan-summary/releases/latest | jq -r .tag_name)
+          [ -n "$ver" ] && [ "$ver" != "null" ] || { echo "no release; skipping"; exit 0; }
+          curl -fsSL "https://github.com/dineshba/terraform-plan-summary/releases/download/${ver}/tf-summarize_linux_amd64.tar.gz" | tar -xz tf-summarize
+          { echo "### Plan digest — aws (tf-summarize)"; echo '```'; (cd infra/terraform/aws && "$GITHUB_WORKSPACE/tf-summarize" plan.out); echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Plan change table (aws)
+        if: always()
+        run: |
+          if [ -f infra/terraform/aws/plan.out ]; then
+            {
+              echo "| Change | Resource |"
+              echo "| --- | --- |"
+              terraform -chdir=infra/terraform/aws show -json plan.out \
+                | jq -r '
+                    .resource_changes[]
+                    | select((.change.actions | index("no-op") | not) and (.change.actions | index("read") | not))
+                    | ( .change.actions | join(",") ) as $a
+                    | ( if $a == "create" then "create"
+                        elif $a == "update" then "update"
+                        elif $a == "delete" then "destroy"
+                        elif $a == "delete,create" or $a == "create,delete" then "replace"
+                        else $a end ) as $label
+                    | "| \($label) | `\(.address)` |"
+                  '
+            } > infra/terraform/aws/plan-table.md
+          else
+            echo "no plan.out; skipping plan table"
+          fi
+
+      - name: Upload diagnostic logs (aws)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: terraform-diag-aws-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tf-diag-aws-*.log
+            infra/terraform/aws/plan.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Job summary (aws)
+        if: always()
+        run: |
+          {
+            echo "## Terraform plan — aws"
+            echo
+            if [ -f infra/terraform/aws/plan-table.md ]; then
+              cat infra/terraform/aws/plan-table.md
+              echo
+            fi
+            if [ -f infra/terraform/aws/plan.txt ]; then
+              line=$(grep -E '^(Plan:|No changes)' infra/terraform/aws/plan.txt | head -1)
+              if [ -n "$line" ]; then
+                echo "**${line}**"
+                echo
+                echo "<details><summary>Full plan output</summary>"
+                echo
+                echo '```hcl'
+                head -c 900000 infra/terraform/aws/plan.txt
+                echo '```'
+                echo
+                echo "</details>"
+              else
+                echo "### Error"
+                echo
+                echo '```'
+                grep -E '^(Error:|│)' infra/terraform/aws/plan.txt || echo "no error detail found"
+                echo '```'
+              fi
+            else
+              echo "_no plan output (plan.txt missing)_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment plan on PR (aws)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const fs = require('fs');
+            const cloud = 'aws';
+            const marker = `<!-- tf-plan-${cloud} -->`;
+            const planPath = `infra/terraform/${cloud}/plan.txt`;
+            const tablePath = `infra/terraform/${cloud}/plan-table.md`;
+
+            let body;
+            if (!fs.existsSync(planPath)) {
+              body = `${marker}\n### Terraform plan — ${cloud}\n\n_plan unavailable (see workflow run for details)_`;
+            } else {
+              const planText = fs.readFileSync(planPath, 'utf8');
+              const match = planText.match(/^(Plan:.*|No changes.*)$/m);
+              const planLine = match ? match[0] : null;
+              const table = fs.existsSync(tablePath) ? fs.readFileSync(tablePath, 'utf8') : '';
+              const truncated = planText.length > 60000 ? planText.slice(0, 60000) + '\n... (truncated)' : planText;
+
+              const sections = [
+                marker,
+                `### Terraform plan — ${cloud}`,
+                '',
+                planLine ? `**${planLine}**` : '_plan failed — see workflow run for error details_',
+              ];
+              if (table) {
+                sections.push('', '<details><summary>Change summary</summary>', '', table, '</details>');
+              }
+              sections.push(
+                '',
+                '<details><summary>Full plan output</summary>',
+                '',
+                '```hcl',
+                truncated,
+                '```',
+                '',
+                '</details>',
+              );
+              body = sections.join('\n');
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
   plan-azure:
     name: terraform plan (azure, advisory)
@@ -175,6 +360,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -196,6 +382,8 @@ jobs:
       - name: terraform init
         env:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
+          TF_LOG: DEBUG
+          TF_LOG_PATH: ${{ github.workspace }}/tf-diag-azure-init.log
         # Partial backend now requires config at init. Use a plan-specific state
         # key so advisory plans never touch the e2e run state.
         run: |
@@ -206,9 +394,173 @@ jobs:
             -backend-config="key=plan/azure/${{ github.run_id }}.tfstate"
 
       - name: terraform plan
+        id: plan
         env:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
-        run: terraform -chdir=infra/terraform/azure plan -input=false -lock=false
+          TF_LOG: DEBUG
+          TF_LOG_PATH: ${{ github.workspace }}/tf-diag-azure-plan.log
+        run: |
+          set +e
+          terraform -chdir=infra/terraform/azure plan -input=false -lock=false -no-color -out=plan.out 2>&1 | tee infra/terraform/azure/plan.txt
+          code=${PIPESTATUS[0]}
+          echo "plan exit: ${code}"
+          exit 0   # advisory job — never fail here
+
+      - name: Upload plan artifact (azure)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tfplan-azure-${{ github.sha }}
+          path: infra/terraform/azure/plan.out
+          retention-days: 5
+          if-no-files-found: ignore
+
+      - name: Plan digest (azure, tf-summarize)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -f infra/terraform/azure/plan.out ] || { echo "no plan.out; skipping"; exit 0; }
+          ver=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" https://api.github.com/repos/dineshba/terraform-plan-summary/releases/latest | jq -r .tag_name)
+          [ -n "$ver" ] && [ "$ver" != "null" ] || { echo "no release; skipping"; exit 0; }
+          curl -fsSL "https://github.com/dineshba/terraform-plan-summary/releases/download/${ver}/tf-summarize_linux_amd64.tar.gz" | tar -xz tf-summarize
+          { echo "### Plan digest — azure (tf-summarize)"; echo '```'; (cd infra/terraform/azure && "$GITHUB_WORKSPACE/tf-summarize" plan.out); echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Plan change table (azure)
+        if: always()
+        run: |
+          if [ -f infra/terraform/azure/plan.out ]; then
+            {
+              echo "| Change | Resource |"
+              echo "| --- | --- |"
+              terraform -chdir=infra/terraform/azure show -json plan.out \
+                | jq -r '
+                    .resource_changes[]
+                    | select((.change.actions | index("no-op") | not) and (.change.actions | index("read") | not))
+                    | ( .change.actions | join(",") ) as $a
+                    | ( if $a == "create" then "create"
+                        elif $a == "update" then "update"
+                        elif $a == "delete" then "destroy"
+                        elif $a == "delete,create" or $a == "create,delete" then "replace"
+                        else $a end ) as $label
+                    | "| \($label) | `\(.address)` |"
+                  '
+            } > infra/terraform/azure/plan-table.md
+          else
+            echo "no plan.out; skipping plan table"
+          fi
+
+      - name: Upload diagnostic logs (azure)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: terraform-diag-azure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tf-diag-azure-*.log
+            infra/terraform/azure/plan.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Job summary (azure)
+        if: always()
+        run: |
+          {
+            echo "## Terraform plan — azure"
+            echo
+            if [ -f infra/terraform/azure/plan-table.md ]; then
+              cat infra/terraform/azure/plan-table.md
+              echo
+            fi
+            if [ -f infra/terraform/azure/plan.txt ]; then
+              line=$(grep -E '^(Plan:|No changes)' infra/terraform/azure/plan.txt | head -1)
+              if [ -n "$line" ]; then
+                echo "**${line}**"
+                echo
+                echo "<details><summary>Full plan output</summary>"
+                echo
+                echo '```hcl'
+                head -c 900000 infra/terraform/azure/plan.txt
+                echo '```'
+                echo
+                echo "</details>"
+              else
+                echo "### Error"
+                echo
+                echo '```'
+                grep -E '^(Error:|│)' infra/terraform/azure/plan.txt || echo "no error detail found"
+                echo '```'
+              fi
+            else
+              echo "_no plan output (plan.txt missing)_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment plan on PR (azure)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const fs = require('fs');
+            const cloud = 'azure';
+            const marker = `<!-- tf-plan-${cloud} -->`;
+            const planPath = `infra/terraform/${cloud}/plan.txt`;
+            const tablePath = `infra/terraform/${cloud}/plan-table.md`;
+
+            let body;
+            if (!fs.existsSync(planPath)) {
+              body = `${marker}\n### Terraform plan — ${cloud}\n\n_plan unavailable (see workflow run for details)_`;
+            } else {
+              const planText = fs.readFileSync(planPath, 'utf8');
+              const match = planText.match(/^(Plan:.*|No changes.*)$/m);
+              const planLine = match ? match[0] : null;
+              const table = fs.existsSync(tablePath) ? fs.readFileSync(tablePath, 'utf8') : '';
+              const truncated = planText.length > 60000 ? planText.slice(0, 60000) + '\n... (truncated)' : planText;
+
+              const sections = [
+                marker,
+                `### Terraform plan — ${cloud}`,
+                '',
+                planLine ? `**${planLine}**` : '_plan failed — see workflow run for error details_',
+              ];
+              if (table) {
+                sections.push('', '<details><summary>Change summary</summary>', '', table, '</details>');
+              }
+              sections.push(
+                '',
+                '<details><summary>Full plan output</summary>',
+                '',
+                '```hcl',
+                truncated,
+                '```',
+                '',
+                '</details>',
+              );
+              body = sections.join('\n');
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 
   plan-gcp:
     name: terraform plan (gcp, advisory)
@@ -217,6 +569,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
     env:
       # Placeholders for the variables in infra/terraform/gcp/variables.tf
       # that have no default, so init/plan never blocks on interactive var
@@ -244,6 +597,9 @@ jobs:
           service_account: ${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}
 
       - name: terraform init
+        env:
+          TF_LOG: DEBUG
+          TF_LOG_PATH: ${{ github.workspace }}/tf-diag-gcp-init.log
         # Partial backend now requires config at init. Use a plan-specific state
         # prefix so advisory plans never touch the e2e run state.
         run: |
@@ -252,4 +608,396 @@ jobs:
             -backend-config="prefix=plan/gcp/${{ github.run_id }}"
 
       - name: terraform plan
-        run: terraform -chdir=infra/terraform/gcp plan -input=false -lock=false
+        id: plan
+        env:
+          TF_LOG: DEBUG
+          TF_LOG_PATH: ${{ github.workspace }}/tf-diag-gcp-plan.log
+        run: |
+          set +e
+          terraform -chdir=infra/terraform/gcp plan -input=false -lock=false -no-color -out=plan.out 2>&1 | tee infra/terraform/gcp/plan.txt
+          code=${PIPESTATUS[0]}
+          echo "plan exit: ${code}"
+          exit 0   # advisory job — never fail here
+
+      - name: Upload plan artifact (gcp)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tfplan-gcp-${{ github.sha }}
+          path: infra/terraform/gcp/plan.out
+          retention-days: 5
+          if-no-files-found: ignore
+
+      - name: Plan digest (gcp, tf-summarize)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -f infra/terraform/gcp/plan.out ] || { echo "no plan.out; skipping"; exit 0; }
+          ver=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" https://api.github.com/repos/dineshba/terraform-plan-summary/releases/latest | jq -r .tag_name)
+          [ -n "$ver" ] && [ "$ver" != "null" ] || { echo "no release; skipping"; exit 0; }
+          curl -fsSL "https://github.com/dineshba/terraform-plan-summary/releases/download/${ver}/tf-summarize_linux_amd64.tar.gz" | tar -xz tf-summarize
+          { echo "### Plan digest — gcp (tf-summarize)"; echo '```'; (cd infra/terraform/gcp && "$GITHUB_WORKSPACE/tf-summarize" plan.out); echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Plan change table (gcp)
+        if: always()
+        run: |
+          if [ -f infra/terraform/gcp/plan.out ]; then
+            {
+              echo "| Change | Resource |"
+              echo "| --- | --- |"
+              terraform -chdir=infra/terraform/gcp show -json plan.out \
+                | jq -r '
+                    .resource_changes[]
+                    | select((.change.actions | index("no-op") | not) and (.change.actions | index("read") | not))
+                    | ( .change.actions | join(",") ) as $a
+                    | ( if $a == "create" then "create"
+                        elif $a == "update" then "update"
+                        elif $a == "delete" then "destroy"
+                        elif $a == "delete,create" or $a == "create,delete" then "replace"
+                        else $a end ) as $label
+                    | "| \($label) | `\(.address)` |"
+                  '
+            } > infra/terraform/gcp/plan-table.md
+          else
+            echo "no plan.out; skipping plan table"
+          fi
+
+      - name: Upload diagnostic logs (gcp)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: terraform-diag-gcp-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tf-diag-gcp-*.log
+            infra/terraform/gcp/plan.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Job summary (gcp)
+        if: always()
+        run: |
+          {
+            echo "## Terraform plan — gcp"
+            echo
+            if [ -f infra/terraform/gcp/plan-table.md ]; then
+              cat infra/terraform/gcp/plan-table.md
+              echo
+            fi
+            if [ -f infra/terraform/gcp/plan.txt ]; then
+              line=$(grep -E '^(Plan:|No changes)' infra/terraform/gcp/plan.txt | head -1)
+              if [ -n "$line" ]; then
+                echo "**${line}**"
+                echo
+                echo "<details><summary>Full plan output</summary>"
+                echo
+                echo '```hcl'
+                head -c 900000 infra/terraform/gcp/plan.txt
+                echo '```'
+                echo
+                echo "</details>"
+              else
+                echo "### Error"
+                echo
+                echo '```'
+                grep -E '^(Error:|│)' infra/terraform/gcp/plan.txt || echo "no error detail found"
+                echo '```'
+              fi
+            else
+              echo "_no plan output (plan.txt missing)_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment plan on PR (gcp)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const fs = require('fs');
+            const cloud = 'gcp';
+            const marker = `<!-- tf-plan-${cloud} -->`;
+            const planPath = `infra/terraform/${cloud}/plan.txt`;
+            const tablePath = `infra/terraform/${cloud}/plan-table.md`;
+
+            let body;
+            if (!fs.existsSync(planPath)) {
+              body = `${marker}\n### Terraform plan — ${cloud}\n\n_plan unavailable (see workflow run for details)_`;
+            } else {
+              const planText = fs.readFileSync(planPath, 'utf8');
+              const match = planText.match(/^(Plan:.*|No changes.*)$/m);
+              const planLine = match ? match[0] : null;
+              const table = fs.existsSync(tablePath) ? fs.readFileSync(tablePath, 'utf8') : '';
+              const truncated = planText.length > 60000 ? planText.slice(0, 60000) + '\n... (truncated)' : planText;
+
+              const sections = [
+                marker,
+                `### Terraform plan — ${cloud}`,
+                '',
+                planLine ? `**${planLine}**` : '_plan failed — see workflow run for error details_',
+              ];
+              if (table) {
+                sections.push('', '<details><summary>Change summary</summary>', '', table, '</details>');
+              }
+              sections.push(
+                '',
+                '<details><summary>Full plan output</summary>',
+                '',
+                '```hcl',
+                truncated,
+                '```',
+                '',
+                '</details>',
+              );
+              body = sections.join('\n');
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # Infracost: static, credential-less monthly-cost estimate parsed from the
+  # Terraform HCL (no cloud account contacted, no plan required). PR-only,
+  # matrixed over the three clouds, entirely advisory — INFRACOST_API_KEY
+  # missing or a breakdown failure just yields a "cost unavailable" comment,
+  # never a failed job.
+  cost:
+    name: infracost (${{ matrix.cloud }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        cloud: [aws, azure, gcp]
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Infracost
+        uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        continue-on-error: true
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      # Materialize a per-cloud tfvars file so the stack's required
+      # (no-default) variables resolve — Infracost only parses HCL, it never
+      # talks to a cloud account, so these are just placeholders matching the
+      # plan-*/e2e-cloud.yaml conventions. Azure has no required variables
+      # (every infra/terraform/azure/variables.tf entry has a default), so it
+      # gets no var-file.
+      - name: Write cost tfvars (${{ matrix.cloud }})
+        run: |
+          case "${{ matrix.cloud }}" in
+            aws)
+              {
+                echo 'region                  = "us-east-2"'
+                echo 'cluster_name            = "keda-gpu-scaler-ci-cost"'
+                echo 'gpu_instance_type       = "g5.xlarge"'
+                echo 'gpu_node_count          = 1'
+                echo 'scaler_image_repository = "ghcr.io/pmady/keda-gpu-scaler"'
+                echo 'helm_timeout            = 600'
+                echo 'tags                    = {}'
+              } > /tmp/cost-aws.tfvars
+              ;;
+            gcp)
+              {
+                echo "project_id              = \"${{ vars.GCP_E2E_PROJECT }}\""
+                echo 'region                  = "us-central1"'
+                echo 'zone                    = "us-central1-a"'
+                echo 'cluster_name            = "keda-gpu-scaler-ci-cost"'
+                echo 'gpu_machine_type        = "n1-standard-4"'
+                echo 'gpu_type                = "nvidia-tesla-t4"'
+                echo 'gpu_per_node            = 1'
+                echo 'gpu_node_count          = 1'
+                echo 'scaler_image_repository = "ghcr.io/pmady/keda-gpu-scaler"'
+                echo 'helm_timeout            = 1800'
+                echo 'labels                  = {}'
+              } > /tmp/cost-gcp.tfvars
+              ;;
+            azure)
+              echo "azure: no required vars, skipping tfvars file"
+              ;;
+          esac
+
+      - name: Generate cost breakdown (${{ matrix.cloud }})
+        continue-on-error: true
+        run: |
+          case "${{ matrix.cloud }}" in
+            azure)
+              infracost breakdown --path=infra/terraform/azure --format=json --out-file=/tmp/infracost-azure.json
+              ;;
+            *)
+              infracost breakdown --path=infra/terraform/${{ matrix.cloud }} --terraform-var-file=/tmp/cost-${{ matrix.cloud }}.tfvars --format=json --out-file=/tmp/infracost-${{ matrix.cloud }}.json
+              ;;
+          esac
+
+      - name: Comment cost on PR (${{ matrix.cloud }})
+        if: always()
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+            const cloud = '${{ matrix.cloud }}';
+            const marker = `<!-- infracost-${cloud} -->`;
+            const jsonPath = `/tmp/infracost-${cloud}.json`;
+
+            let body;
+            if (!fs.existsSync(jsonPath)) {
+              body = `${marker}\n### Cost — ${cloud} (Infracost)\n\ncost unavailable (INFRACOST_API_KEY not set or breakdown failed)`;
+            } else {
+              let table;
+              try {
+                table = execSync(`infracost output --path=${jsonPath} --format=table`, { maxBuffer: 10 * 1024 * 1024 }).toString();
+              } catch (e) {
+                table = `infracost output failed: ${e.message}`;
+              }
+
+              let monthly = null;
+              try {
+                const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+                if (data.totalMonthlyCost !== undefined && data.totalMonthlyCost !== null) {
+                  monthly = Number(data.totalMonthlyCost);
+                }
+              } catch (e) {
+                // leave monthly as null
+              }
+              const hourly = monthly !== null ? monthly / 730 : null;
+              const fmt = (n) => (n === null || Number.isNaN(n)) ? 'N/A' : `$${n.toFixed(2)}`;
+
+              body = [
+                marker,
+                `### Cost — ${cloud} (Infracost)`,
+                '',
+                `Monthly: **${fmt(monthly)}** | Hourly: **${fmt(hourly)}**`,
+                '',
+                '<details><summary>Full cost table</summary>',
+                '',
+                '```',
+                table,
+                '```',
+                '',
+                '</details>',
+              ].join('\n');
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Cost summary (${{ matrix.cloud }})
+        if: always()
+        run: |
+          {
+            echo "## Cost — ${{ matrix.cloud }}"
+            echo
+            if [ -f /tmp/infracost-${{ matrix.cloud }}.json ]; then
+              monthly=$(jq -r '.totalMonthlyCost // empty' /tmp/infracost-${{ matrix.cloud }}.json)
+              if [ -n "$monthly" ]; then
+                hourly=$(awk "BEGIN { printf \"%.4f\", ${monthly}/730 }")
+                echo "Monthly: **\$${monthly}** | Hourly: **\$${hourly}**"
+              else
+                echo "cost unavailable (no totalMonthlyCost in breakdown output)"
+              fi
+              echo
+              echo '<details><summary>Full cost table</summary>'
+              echo
+              echo '```'
+              infracost output --path=/tmp/infracost-${{ matrix.cloud }}.json --format=table || echo "infracost output failed"
+              echo '```'
+              echo
+              echo '</details>'
+            else
+              echo "cost unavailable (INFRACOST_API_KEY not set or breakdown failed)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # terraform-docs: regenerates the injected block in each stack's README.md
+  # in place and pushes the change back onto the PR branch. Single job (NOT
+  # matrixed) so at most one push happens per run — a matrix here would have
+  # three jobs racing to push to the same branch.
+  docs:
+    name: terraform-docs
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: terraform-docs (aws)
+        uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
+        with:
+          working-dir: infra/terraform/aws
+          output-file: README.md
+          output-method: inject
+          git-push: "false"
+
+      - name: terraform-docs (azure)
+        uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
+        with:
+          working-dir: infra/terraform/azure
+          output-file: README.md
+          output-method: inject
+          git-push: "false"
+
+      - name: terraform-docs (gcp)
+        uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
+        with:
+          working-dir: infra/terraform/gcp
+          output-file: README.md
+          output-method: inject
+          git-push: "false"
+
+      - name: Commit and push docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add infra/terraform/*/README.md
+          if ! git diff --cached --quiet; then
+            git commit -m "docs: update terraform-docs"
+            git push
+          else
+            echo "no doc changes"
+          fi
