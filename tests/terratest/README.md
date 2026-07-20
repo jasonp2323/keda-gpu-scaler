@@ -75,6 +75,42 @@ After `terraform apply` in a bootstrap dir:
 
 The main stacks carry a **partial** backend block (`backend "s3"/"azurerm"/"gcs" {}`); the tests supply the bucket/key at init via these variables, keyed per run. This means the bootstrap must be applied before the suite can run (locally or in CI).
 
+## GitHub Actions configuration (secrets & variables)
+
+Everything the workflows read, in one place. Add these under **Settings → Secrets and variables → Actions**. **Most values are outputs of the per-cloud `bootstrap/`** — apply the bootstrap, run `terraform output`, and copy them in. (Note the naming: the GitHub *variable* `AWS_E2E_STATE_BUCKET` is mapped by the workflow to the test env var `E2E_AWS_STATE_BUCKET` — set the GitHub name shown here.)
+
+### Secrets
+
+| Secret | Used by | Where it comes from |
+|--------|---------|---------------------|
+| `AWS_E2E_ROLE_ARN` | e2e-cloud, plan-aws | `aws/bootstrap` output `role_arn` |
+| `AZURE_E2E_CLIENT_ID` | e2e-cloud, plan-azure | `azure/bootstrap` output `client_id` |
+| `AZURE_E2E_TENANT_ID` | e2e-cloud, plan-azure | `azure/bootstrap` output `tenant_id` |
+| `AZURE_E2E_SUBSCRIPTION_ID` | e2e-cloud, plan-azure | `azure/bootstrap` output `subscription_id` |
+| `GCP_E2E_WIF_PROVIDER` | e2e-cloud, plan-gcp | `gcp/bootstrap` output `wif_provider` |
+| `GCP_E2E_SERVICE_ACCOUNT` | e2e-cloud, plan-gcp | `gcp/bootstrap` output `service_account_email` |
+| `INFRACOST_API_KEY` | infra-validate (cost) | free key from infracost.io — **optional**; cost steps skip without it |
+| `GITHUB_TOKEN` | PR comments, docs push | **auto-provided by GitHub — do not set** |
+
+### Variables
+
+| Variable | Used by | Where it comes from |
+|----------|---------|---------------------|
+| `AWS_E2E_REGION` | e2e-cloud, plan-aws | your target AWS region (match `aws/bootstrap` `region`) |
+| `AWS_E2E_STATE_BUCKET` | e2e-cloud, plan-aws | `aws/bootstrap` output `state_bucket` |
+| `AWS_E2E_STATE_LOCK_TABLE` | e2e-cloud, plan-aws | `aws/bootstrap` output `state_lock_table` |
+| `AZURE_E2E_STATE_RESOURCE_GROUP` | e2e-cloud, plan-azure | `azure/bootstrap` output `state_resource_group` |
+| `AZURE_E2E_STATE_STORAGE_ACCOUNT` | e2e-cloud, plan-azure | `azure/bootstrap` output `state_storage_account` |
+| `AZURE_E2E_STATE_CONTAINER` | e2e-cloud, plan-azure | `azure/bootstrap` output `state_container` (default `tfstate`) |
+| `GCP_E2E_PROJECT` | e2e-cloud, plan-gcp, cost | your GCP project id |
+| `GCP_E2E_STATE_BUCKET` | e2e-cloud, plan-gcp | `gcp/bootstrap` output `state_bucket` |
+
+### Environments
+
+Create `e2e-aws`, `e2e-azure`, `e2e-gcp` under **Settings → Environments**, each with required reviewers — the approval gate for the paid apply jobs in `e2e-cloud.yaml`.
+
+The credential-less jobs (`fmt` / `validate` / `tflint` / `checkov` / `docs`) need none of the above; only the `plan-*`, `cost`, and e2e apply/destroy jobs consume them.
+
 ## Configuration (Environment Variables)
 
 All variables are optional unless marked **required**.
@@ -120,8 +156,6 @@ The state key is derived per run as `e2e/<cloud>/<cluster_name>.tfstate` (GCS us
 
 **Automatic teardown:** The test defers `terraform destroy`, which runs on exit (success or failure). The CI workflow adds a safety-net `terraform destroy` job if the test process is killed.
 
-**Leaked-cluster janitor:** `.github/workflows/gpu-cluster-janitor.yaml` runs every 3 hours (and on demand) and destroys any run whose remote state under `e2e/<cloud>/` is older than a TTL (default 6h) — a backstop for clusters that leaked when both the test's `defer` and the safety-net job failed. Manual runs default to `dry_run: true` (preview); the schedule reaps for real. If a janitor job fails systemically it opens a `janitor-failure` GitHub issue (and emails, when SMTP is configured) so a still-billing leak gets noticed.
-
 **Finding leftovers:** All resources are tagged `Project=keda-gpu-scaler` (GCP uses label `project=keda-gpu-scaler`). If a run is interrupted, find and destroy manually:
 ```bash
 cd infra/terraform/<cloud>
@@ -138,8 +172,7 @@ terraform destroy
 - **Scope:** Intentionally NOT run on every PR/push, matching the repo's "infra CI is manual only" stance.
 
 **Related workflows:**
-- **`infra-validate.yaml`** — cheap per-PR gates on `infra/terraform/**`: `terraform fmt`, `validate`, `tflint`, and `checkov` (blocking, credential-less), plus an advisory `plan`.
-- **`gpu-cluster-janitor.yaml`** — scheduled cost guardrail that reaps leaked clusters (see **Cost & Teardown**) and notifies via GitHub issue / email on failure.
+- **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking, credential-less); advisory per-cloud `plan` jobs that save the plan as an artifact, post an updating PR comment + job summary, and upload diagnostics; an Infracost `cost` estimate per cloud (needs `INFRACOST_API_KEY`); and a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
 
 ## OIDC / Cloud Authentication Setup
 
@@ -438,7 +471,7 @@ These two trigger types present **different OIDC subjects** to the cloud provide
 - Add all secrets/variables above under **Settings → Secrets and variables → Actions** (secrets for credentials, variables for the non-secret region/project values).
 - Create the three GitHub **Environments** — `e2e-aws`, `e2e-azure`, `e2e-gcp` — under **Settings → Environments**, and add required reviewers to each. This is what the manual `RUN` confirmation in `e2e-cloud.yaml` actually gates.
 - The credential-less gates (`fmt`, `validate`, `tflint`, `checkov`) need none of this setup — only the `plan-*` jobs and the e2e apply/destroy jobs authenticate to a cloud.
-- **Janitor notifications:** the janitor opens a GitHub issue on failure, so **Issues must be enabled** on the repo (Settings → General → Features → Issues). For optional email alerts, also set the `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` secrets and the `JANITOR_ALERT_EMAIL` variable; without them the email step is skipped and only the issue is created.
+- **Infracost (optional):** the `cost` job needs the `INFRACOST_API_KEY` secret (free key from infracost.io). Without it the cost steps skip and the rest of the pipeline is unaffected.
 
 ### Reusing existing OIDC resources
 
