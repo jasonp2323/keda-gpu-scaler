@@ -44,3 +44,9 @@ variable "environments" {
   type        = list(string)
   default     = ["e2e-aws"]
 }
+
+variable "create_github_oidc_provider" {
+  description = "Create the account-global GitHub OIDC provider. Set false to reference an existing one (only one per account is allowed) instead of creating it."
+  type        = bool
+  default     = true
+}

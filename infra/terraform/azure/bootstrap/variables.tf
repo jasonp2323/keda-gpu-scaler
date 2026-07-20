@@ -42,6 +42,12 @@ variable "app_display_name" {
   default     = "keda-gpu-scaler-e2e"
 }
 
+variable "create_app_registration" {
+  description = "Create the app registration + service principal. Set false to reference an existing app by display_name (var.app_display_name) instead of creating a duplicate."
+  type        = bool
+  default     = true
+}
+
 variable "environments" {
   description = "GitHub Environments to trust via federated credentials (subject repo:<github_repository>:environment:<env>). A pull_request-subject credential is always added in addition to these."
   type        = list(string)

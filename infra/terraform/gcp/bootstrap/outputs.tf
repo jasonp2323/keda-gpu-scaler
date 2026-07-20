@@ -5,7 +5,7 @@ output "state_bucket" {
 
 output "wif_provider" {
   description = "Full Workload Identity Pool Provider resource name. Store as GitHub secret GCP_E2E_WIF_PROVIDER."
-  value       = google_iam_workload_identity_pool_provider.github.name
+  value       = local.wif_provider_name
 }
 
 output "service_account_email" {

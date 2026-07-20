@@ -440,6 +440,36 @@ These two trigger types present **different OIDC subjects** to the cloud provide
 - The credential-less gates (`fmt`, `validate`, `tflint`, `checkov`) need none of this setup — only the `plan-*` jobs and the e2e apply/destroy jobs authenticate to a cloud.
 - **Janitor notifications:** the janitor opens a GitHub issue on failure, so **Issues must be enabled** on the repo (Settings → General → Features → Issues). For optional email alerts, also set the `SMTP_SERVER`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` secrets and the `JANITOR_ALERT_EMAIL` variable; without them the email step is skipped and only the issue is created.
 
+### Reusing existing OIDC resources
+
+Some of these resources are account/tenant-global and may already exist (an org that already wired GitHub OIDC for other repos). Each bootstrap can **reference** an existing one instead of failing on a duplicate — flip the toggle to `false`:
+
+| Cloud | Toggle (`false` = reuse) | Referenced resource |
+|-------|--------------------------|---------------------|
+| AWS   | `create_github_oidc_provider`   | the account's `token.actions.githubusercontent.com` OIDC provider |
+| GCP   | `create_workload_identity_pool` | the Workload Identity Pool + provider (`var.pool_id` / `var.provider_id`) |
+| Azure | `create_app_registration`       | the app registration + service principal (by `var.app_display_name`; must be unique in the tenant) |
+
+With the toggle `false` the bootstrap looks the resource up and wires the rest (role, federated credentials, bindings) onto it — no duplicate created.
+
+Alternatively, adopt an already-created resource into this config's state with `terraform import`, then apply normally. The `[0]` index is required because these resources are now `count`-based:
+
+```bash
+# AWS — existing OIDC provider
+terraform import 'aws_iam_openid_connect_provider.github[0]' \
+  arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com
+
+# GCP — existing pool + provider
+terraform import 'google_iam_workload_identity_pool.github[0]' \
+  projects/<PROJECT_ID>/locations/global/workloadIdentityPools/<POOL_ID>
+terraform import 'google_iam_workload_identity_pool_provider.github[0]' \
+  projects/<PROJECT_ID>/locations/global/workloadIdentityPools/<POOL_ID>/providers/<PROVIDER_ID>
+
+# Azure — existing app registration + service principal
+terraform import 'azuread_application.e2e[0]' /applications/<APP_OBJECT_ID>
+terraform import 'azuread_service_principal.e2e[0]' <SP_OBJECT_ID>
+```
+
 ## Coverage Note
 
 **These tests are the only automated coverage of real-GPU behaviour.** The root module (`cmd/`, `pkg/`) uses a mock GPU collector for unit tests. Real NVIDIA hardware validation happens only here.

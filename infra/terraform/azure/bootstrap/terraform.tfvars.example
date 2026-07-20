@@ -9,6 +9,12 @@ github_repository = "jasonp2323/keda-gpu-scaler"
 app_display_name  = "keda-gpu-scaler-e2e"
 environments      = ["e2e-azure"]
 
+# Set to false to reference an existing app registration (by app_display_name)
+# instead of creating a new one — use this if state was lost, to avoid
+# creating a duplicate app with a new client_id. app_display_name must be
+# unique in the tenant for the lookup to resolve to a single app.
+# create_app_registration = false
+
 # For repos created after 2026-07-15, GitHub's OIDC `sub` embeds numeric IDs
 # (repo:OWNER@OWNER_ID/REPO@REPO_ID:...). Set both to also federate that
 # immutable form; leave unset for classic-only. Fetch with:

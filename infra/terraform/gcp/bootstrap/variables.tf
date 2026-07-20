@@ -37,3 +37,9 @@ variable "service_account_id" {
   type        = string
   default     = "keda-gpu-scaler-e2e"
 }
+
+variable "create_workload_identity_pool" {
+  description = "Create the Workload Identity Pool and provider. Set false to reference existing ones by id (var.pool_id / var.provider_id) instead — useful when they already exist or were soft-deleted."
+  type        = bool
+  default     = true
+}

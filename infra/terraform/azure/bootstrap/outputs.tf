@@ -15,7 +15,7 @@ output "state_container" {
 
 output "client_id" {
   description = "Application (client) ID of the GitHub Actions OIDC app/service principal. Store as the AZURE_E2E_CLIENT_ID secret."
-  value       = azuread_application.e2e.client_id
+  value       = local.app_client_id
 }
 
 output "tenant_id" {

@@ -14,3 +14,5 @@ state_lock_table_name = "keda-gpu-scaler-tf-lock"
 
 role_name    = "keda-gpu-scaler-e2e"
 environments = ["e2e-aws"]
+
+# create_github_oidc_provider = false  # reuse an existing account OIDC provider

@@ -2,6 +2,7 @@
 # a long-lived service account key. Mirrors tests/terratest/README.md ("### GCP").
 
 resource "google_iam_workload_identity_pool" "github" {
+  count                     = var.create_workload_identity_pool ? 1 : 0
   project                   = var.project_id
   workload_identity_pool_id = var.pool_id
   display_name              = "keda-gpu-scaler e2e"
@@ -9,8 +10,9 @@ resource "google_iam_workload_identity_pool" "github" {
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
+  count                              = var.create_workload_identity_pool ? 1 : 0
   project                            = var.project_id
-  workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github[0].workload_identity_pool_id
   workload_identity_pool_provider_id = var.provider_id
   display_name                       = "GitHub Actions"
   description                        = "Restricted to ${var.github_repository} via the attribute condition below."
@@ -27,6 +29,28 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
+}
+
+# Reference case: var.create_workload_identity_pool = false looks up an
+# already-existing pool/provider by id instead of creating one (e.g. when it
+# already exists, or GCP is still soft-deleting a same-id pool from <30 days
+# ago).
+data "google_iam_workload_identity_pool" "github" {
+  count                     = var.create_workload_identity_pool ? 0 : 1
+  project                   = var.project_id
+  workload_identity_pool_id = var.pool_id
+}
+
+data "google_iam_workload_identity_pool_provider" "github" {
+  count                              = var.create_workload_identity_pool ? 0 : 1
+  project                            = var.project_id
+  workload_identity_pool_id          = var.pool_id
+  workload_identity_pool_provider_id = var.provider_id
+}
+
+locals {
+  pool_name         = var.create_workload_identity_pool ? google_iam_workload_identity_pool.github[0].name : data.google_iam_workload_identity_pool.github[0].name
+  wif_provider_name = var.create_workload_identity_pool ? google_iam_workload_identity_pool_provider.github[0].name : data.google_iam_workload_identity_pool_provider.github[0].name
 }
 
 # Service account CI impersonates to run `terraform apply`/`destroy` against
@@ -71,5 +95,5 @@ resource "google_storage_bucket_iam_member" "e2e_state_bucket" {
 resource "google_service_account_iam_member" "e2e_wif_binding" {
   service_account_id = google_service_account.e2e.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${local.pool_name}/attribute.repository/${var.github_repository}"
 }
