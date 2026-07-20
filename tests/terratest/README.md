@@ -2,6 +2,19 @@
 
 This is the **Tier-3 end-to-end test suite** for KEDA GPU Scaler. It runs REAL `terraform apply` against live cloud infrastructure and asserts autoscaling behaviour on actual NVIDIA hardware.
 
+## Quickstart
+
+End-to-end setup, once per cloud you want to test. Each step links to its full details below.
+
+1. **Prerequisites** — install Go 1.25+, Terraform 1.15.6, and the cloud CLI; request GPU quota for your region/family (0 by default on fresh accounts). See [Prerequisites](#prerequisites).
+2. **Bootstrap (run once)** — `cd infra/terraform/<cloud>/bootstrap`, copy `terraform.tfvars.example` to `terraform.tfvars` and set at least the globally-unique state bucket/account name (and, for repos created after 2026-07-15, the `github_owner_id`/`github_repo_id`), then `terraform apply`. Creates the remote-state backend **and** the GitHub OIDC role/app/service account. See [Bootstrap](#bootstrap-run-once-per-cloud).
+3. **Copy the outputs into GitHub** — run `terraform output` in the bootstrap dir; put the role ARN / client IDs / WIF provider / state bucket names into repo **Settings → Secrets and variables** using the exact names in the [GitHub Actions configuration](#github-actions-configuration-secrets--variables) tables.
+4. **Create Environments** — `e2e-aws` / `e2e-azure` / `e2e-gcp` under **Settings → Environments**, each with required reviewers (the approval gate for paid apply runs).
+5. **Enable Actions** — forks have Actions disabled by default: open the **Actions** tab and enable them. Optionally add the `INFRACOST_API_KEY` secret for cost estimates.
+6. **Run it:**
+   - Open a PR touching `infra/terraform/**` → the credential-less gates (fmt/validate/tflint/checkov) plus advisory plan/cost/docs run automatically.
+   - Trigger the real GPU apply from **Actions → E2E Cloud Tests → Run workflow** → pick the cloud(s), type `RUN` in the confirm box, and approve the environment. For local runs see [Building & Running Tests](#building--running-tests).
+
 ## What the Suite Is
 
 **Location:** `tests/terratest/` — a separate Go module (`github.com/pmady/keda-gpu-scaler/tests/terratest`), isolated from the repo's root module so Terratest's large dependency tree stays out of the lean CGO/NVML scaler build.
