@@ -1,6 +1,13 @@
 region             = "us-east-2"
 github_repository  = "jasonp2323/keda-gpu-scaler"
 
+# For repos created after 2026-07-15, GitHub's OIDC `sub` embeds numeric IDs
+# (repo:OWNER@OWNER_ID/REPO@REPO_ID:...). Set both to also trust that immutable
+# form; leave unset for classic-only. Fetch with:
+#   gh api repos/jasonp2323/keda-gpu-scaler --jq '{owner_id: .owner.id, repo_id: .id}'
+# github_owner_id = "0000000"
+# github_repo_id  = "000000000"
+
 # Bucket names are global across all of S3 - pick something unique.
 state_bucket_name     = "keda-gpu-scaler-tf-state-<unique-suffix>"
 state_lock_table_name = "keda-gpu-scaler-tf-lock"

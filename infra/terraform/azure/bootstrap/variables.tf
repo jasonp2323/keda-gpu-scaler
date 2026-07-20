@@ -24,6 +24,18 @@ variable "github_repository" {
   default     = "jasonp2323/keda-gpu-scaler"
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub owner (user/org) ID, embedded in the immutable OIDC `sub` GitHub issues for repos created after 2026-07-15 (repo:OWNER@OWNER_ID/REPO@REPO_ID:...). Fetch: gh api repos/<owner>/<repo> --jq '.owner.id'. Empty = federate the classic sub only."
+  type        = string
+  default     = ""
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub repository ID, embedded in the immutable OIDC `sub`. Fetch: gh api repos/<owner>/<repo> --jq '.id'. Empty = federate the classic sub only."
+  type        = string
+  default     = ""
+}
+
 variable "app_display_name" {
   description = "Display name for the app registration / service principal used by CI."
   type        = string

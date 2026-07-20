@@ -19,14 +19,34 @@ resource "azuread_service_principal" "e2e" {
 }
 
 locals {
-  # One federated credential per GitHub Environment (`environment:<env>`),
-  # plus one for plain `pull_request` runs (e.g. infra-validate's plan job,
-  # which doesn't run under an Environment). Keyed so each gets a stable,
-  # unique display_name.
-  federated_credential_subjects = merge(
-    { for env in var.environments : "environment-${env}" => "repo:${var.github_repository}:environment:${env}" },
-    { "pull_request" = "repo:${var.github_repository}:pull_request" },
+  github_owner = split("/", var.github_repository)[0]
+  github_repo  = split("/", var.github_repository)[1]
+
+  # Classic OWNER/REPO slug, plus — when the numeric IDs are supplied — the
+  # immutable OWNER@OWNER_ID/REPO@REPO_ID slug GitHub embeds in `sub` for repos
+  # created after 2026-07-15. Federated credentials match `sub` exactly (no
+  # wildcard), so each accepted slug needs its own set of credentials.
+  github_repo_slugs = {
+    classic   = var.github_repository
+    immutable = var.github_owner_id != "" && var.github_repo_id != "" ? "${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repo_id}" : ""
+  }
+
+  # Slug keys that are actually set (drops immutable when the IDs are empty).
+  slug_keys = [for k, v in local.github_repo_slugs : k if v != ""]
+
+  # Subject suffix per GitHub Environment (`environment:<env>`) plus plain
+  # `pull_request` (infra-validate's plan job, which has no Environment).
+  oidc_suffixes = merge(
+    { for env in var.environments : "env-${env}" => "environment:${env}" },
+    { "pull-request" = "pull_request" },
   )
+
+  # One federated credential per (non-empty slug) x (suffix), keyed for a
+  # stable, unique display_name.
+  federated_credential_subjects = {
+    for pair in setproduct(local.slug_keys, keys(local.oidc_suffixes)) :
+    "${pair[0]}-${pair[1]}" => "repo:${local.github_repo_slugs[pair[0]]}:${local.oidc_suffixes[pair[1]]}"
+  }
 }
 
 resource "azuread_application_federated_identity_credential" "e2e" {

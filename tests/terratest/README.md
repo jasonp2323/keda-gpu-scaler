@@ -165,7 +165,12 @@ These two trigger types present **different OIDC subjects** to the cloud provide
    - `e2e-cloud.yaml` (Environment `e2e-aws`): `repo:jasonp2323/keda-gpu-scaler:environment:e2e-aws`
    - `infra-validate.yaml` (`plan-aws`, no Environment): `repo:jasonp2323/keda-gpu-scaler:pull_request`
 
-   Trust policy allowing both:
+   **Immutable `sub` (repos created after 2026-07-15):** GitHub issues the `sub` claim as `repo:OWNER@OWNER_ID/REPO@REPO_ID:...` for newer repos. A trust policy matching only the classic `repo:OWNER/REPO:...` form fails with *"Not authorized to perform sts:AssumeRoleWithWebIdentity."* — so match **both**. Fetch the numeric IDs:
+   ```bash
+   gh api repos/jasonp2323/keda-gpu-scaler --jq '{owner_id: .owner.id, repo_id: .id}'
+   ```
+
+   Trust policy allowing both formats:
    ```json
    {
      "Version": "2012-10-17",
@@ -183,7 +188,9 @@ These two trigger types present **different OIDC subjects** to the cloud provide
            "StringLike": {
              "token.actions.githubusercontent.com:sub": [
                "repo:jasonp2323/keda-gpu-scaler:environment:e2e-aws",
-               "repo:jasonp2323/keda-gpu-scaler:pull_request"
+               "repo:jasonp2323/keda-gpu-scaler:pull_request",
+               "repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:environment:e2e-aws",
+               "repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:pull_request"
              ]
            }
          }
@@ -191,7 +198,7 @@ These two trigger types present **different OIDC subjects** to the cloud provide
      ]
    }
    ```
-   (Broader alternative if preferred: `"repo:jasonp2323/keda-gpu-scaler:*"` in place of the two explicit subjects.)
+   The `aws/bootstrap` config builds this list for you — set its `github_owner_id` / `github_repo_id` variables (leave empty to trust the classic form only). (Looser alternative: replace the four subjects with `"repo:jasonp2323/keda-gpu-scaler:*"` and its immutable twin `"repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:*"`.)
 
 3. **Attach a permissions policy.** Rather than `AdministratorAccess`, attach a policy scoped to the services this stack actually provisions: EC2/VPC networking, EKS + the managed node group, the cluster/node IAM roles and IRSA OIDC provider, the EKS secrets-encryption KMS key, and control-plane CloudWatch logs. Save this as `deployer-policy.json`:
    ```json
@@ -344,6 +351,8 @@ These two trigger types present **different OIDC subjects** to the cloud provide
        "audiences": ["api://AzureADTokenExchange"]
      }'
    ```
+
+   **Immutable `sub` (repos created after 2026-07-15):** federated credentials match the `sub` claim **exactly**, so a repo issuing the immutable `repo:OWNER@OWNER_ID/REPO@REPO_ID:...` form needs a **second credential per subject** with that form (e.g. `repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:environment:e2e-azure`). The `azure/bootstrap` config adds these automatically when you set its `github_owner_id` / `github_repo_id` variables (fetch the IDs with the `gh api` command shown in the AWS section).
 
 3. **Grant the app access via a custom role.** This stack creates only a resource group and an AKS cluster with a **system-assigned** identity (no custom VNet, no `azurerm_role_assignment`), so it needs neither broad `Contributor` nor `User Access Administrator`. Define a role scoped to just those providers — save as `azure-deployer-role.json`:
    ```json

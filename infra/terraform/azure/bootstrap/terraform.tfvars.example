@@ -9,6 +9,13 @@ github_repository = "jasonp2323/keda-gpu-scaler"
 app_display_name  = "keda-gpu-scaler-e2e"
 environments      = ["e2e-azure"]
 
+# For repos created after 2026-07-15, GitHub's OIDC `sub` embeds numeric IDs
+# (repo:OWNER@OWNER_ID/REPO@REPO_ID:...). Set both to also federate that
+# immutable form; leave unset for classic-only. Fetch with:
+#   gh api repos/jasonp2323/keda-gpu-scaler --jq '{owner_id: .owner.id, repo_id: .id}'
+# github_owner_id = "0000000"
+# github_repo_id  = "000000000"
+
 state_resource_group_name  = "keda-gpu-scaler-tfstate-rg"
 state_storage_account_name = "kedagpuscalertfstate" # CHANGE ME: must be globally unique
 state_container_name       = "tfstate"

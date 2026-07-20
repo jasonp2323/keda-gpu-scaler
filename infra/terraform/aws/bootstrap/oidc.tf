@@ -13,12 +13,29 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
-  # One "environment" subject per entry in var.environments, plus the
-  # pull_request subject used by the advisory plan job (no Environment).
-  oidc_subjects = concat(
-    [for env in var.environments : "repo:${var.github_repository}:environment:${env}"],
-    ["repo:${var.github_repository}:pull_request"],
+  github_owner = split("/", var.github_repository)[0]
+  github_repo  = split("/", var.github_repository)[1]
+
+  # Repo slugs accepted in the OIDC `sub`: always the classic OWNER/REPO, plus —
+  # when the numeric IDs are supplied — the immutable OWNER@OWNER_ID/REPO@REPO_ID
+  # slug GitHub embeds for repos created after 2026-07-15. Accepting both keeps
+  # AssumeRoleWithWebIdentity working across the classic and immutable formats.
+  github_repo_slugs = compact([
+    var.github_repository,
+    var.github_owner_id != "" && var.github_repo_id != "" ? "${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repo_id}" : "",
+  ])
+
+  # Still scoped to specific workflows (one subject per Environment + the
+  # pull_request plan job), not a broad `:*`, for each accepted slug.
+  oidc_subject_suffixes = concat(
+    [for env in var.environments : "environment:${env}"],
+    ["pull_request"],
   )
+
+  oidc_subjects = [
+    for pair in setproduct(local.github_repo_slugs, local.oidc_subject_suffixes) :
+    "repo:${pair[0]}:${pair[1]}"
+  ]
 }
 
 data "aws_iam_policy_document" "deployer_trust" {

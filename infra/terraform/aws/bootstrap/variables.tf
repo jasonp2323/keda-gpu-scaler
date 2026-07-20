@@ -10,6 +10,18 @@ variable "github_repository" {
   default     = "jasonp2323/keda-gpu-scaler"
 }
 
+variable "github_owner_id" {
+  description = "Numeric GitHub owner (user/org) ID, embedded in the immutable OIDC `sub` GitHub issues for repos created after 2026-07-15 (repo:OWNER@OWNER_ID/REPO@REPO_ID:...). Fetch: gh api repos/<owner>/<repo> --jq '.owner.id'. Empty = trust the classic sub only."
+  type        = string
+  default     = ""
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub repository ID, embedded in the immutable OIDC `sub`. Fetch: gh api repos/<owner>/<repo> --jq '.id'. Empty = trust the classic sub only."
+  type        = string
+  default     = ""
+}
+
 variable "state_bucket_name" {
   description = "S3 bucket for the main stack's Terraform state. Required: bucket names are globally unique, so there's no safe default."
   type        = string
