@@ -13,7 +13,7 @@ End-to-end setup, once per cloud you want to test. Each step links to its full d
 5. **Enable Actions** — forks have Actions disabled by default: open the **Actions** tab and enable them. Optionally add the `INFRACOST_API_KEY` secret for cost estimates.
 6. **Run it:**
    - Open a PR touching `infra/terraform/**` → the credential-less gates (fmt/validate/tflint/checkov) plus advisory plan/cost/docs run automatically.
-   - Trigger the real GPU apply from **Actions → E2E Cloud Tests → Run workflow** → pick the cloud(s), type `RUN` in the confirm box, and approve the environment. For local runs see [Building & Running Tests](#building--running-tests).
+   - Trigger the real GPU apply from **Actions → E2E Cloud Tests → Run workflow** → pick the cloud(s) and type `apply` in the confirm box. To tear down a leftover cluster, use **Actions → E2E Destroy** (pick the cloud, enter the cluster name, type `destroy`). For local runs see [Building & Running Tests](#building--running-tests).
 
 ## What the Suite Is
 
@@ -178,7 +178,7 @@ terraform destroy
 ## CI Workflow
 
 **`e2e-cloud.yaml`** — the apply-level suite:
-- **Trigger:** `workflow_dispatch` (manual, gated). Select cloud(s); type `RUN` in the cost-confirm input.
+- **Trigger:** `workflow_dispatch` (manual, gated). Select cloud(s); type `apply` in the confirm input. A run self-destroys when it finishes; to tear down a cluster that leaked past that, use the **E2E Destroy** workflow (pick cloud, enter the cluster name, type `destroy`).
 - **Auth:** OIDC/federated cloud auth — no long-lived keys stored. See [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup).
 - **Approval:** Each cloud has a per-cloud GitHub Environment requiring approval before running.
 - **Diagnostics:** on failure the test dumps scaler pod logs, node status, `demo-app`/ScaledObject describe, and recent events (to `E2E_ARTIFACTS_DIR`); the job uploads those plus the full `go test` log as a build artifact (`if: always()`), so a failed run is debuggable after the fact.
@@ -186,6 +186,22 @@ terraform destroy
 
 **Related workflows:**
 - **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking, credential-less); advisory per-cloud `plan` jobs that save the plan as an artifact, post an updating PR comment + job summary, and upload diagnostics; an Infracost `cost` estimate per cloud (needs `INFRACOST_API_KEY`); and a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
+
+## Who can deploy / how it's gated
+
+The apply and destroy workflows are **manual (`workflow_dispatch`)**, so two guards apply on **every** GitHub plan and repo visibility:
+
+1. **Write access** — only users with write/maintain/admin can trigger a run; a read-only collaborator or outsider cannot.
+2. **A typed confirmation** — `apply` for the E2E run, `destroy` for teardown — guards against an accidental click.
+
+A mandatory **second-person approval** (GitHub environment *required reviewers*) is an optional layer whose availability depends on the repo:
+
+| Repo | Free / Pro / Team | Enterprise |
+|------|:--:|:--:|
+| **Public** | ✅ required reviewers | ✅ |
+| **Private / Internal** | ❌ not available | ✅ |
+
+The workflows always declare `environment: e2e-<cloud>` (needed for the OIDC subject), so where required reviewers *are* available they take effect automatically; where they aren't (a private repo below Enterprise) the run proceeds under guards 1–2. **To add a hard second-person gate without Enterprise:** make the repo public, or add an issue-comment approval step (e.g. a pinned `manual-approval` action) to the deploy/destroy workflows.
 
 ## OIDC / Cloud Authentication Setup
 
@@ -482,7 +498,7 @@ These two trigger types present **different OIDC subjects** to the cloud provide
 ### GitHub side
 
 - Add all secrets/variables above under **Settings → Secrets and variables → Actions** (secrets for credentials, variables for the non-secret region/project values).
-- Create the three GitHub **Environments** — `e2e-aws`, `e2e-azure`, `e2e-gcp` — under **Settings → Environments**, and add required reviewers to each. This is what the manual `RUN` confirmation in `e2e-cloud.yaml` actually gates.
+- Create the three GitHub **Environments** — `e2e-aws`, `e2e-azure`, `e2e-gcp` — under **Settings → Environments**. They supply the OIDC subject the trust policy expects, and — on a **public repo or GitHub Enterprise** — enforce required-reviewer approval before a run proceeds. On a private repo below Enterprise, environment approval is unavailable, so the effective gate is: only users with **write access** can trigger a run, and they must type `apply` / `destroy` to confirm. See [Who can deploy / how it's gated](#who-can-deploy--how-its-gated).
 - The credential-less gates (`fmt`, `validate`, `tflint`, `checkov`) need none of this setup — only the `plan-*` jobs and the e2e apply/destroy jobs authenticate to a cloud.
 - **Infracost (optional):** the `cost` job needs the `INFRACOST_API_KEY` secret (free key from infracost.io). Without it the cost steps skip and the rest of the pipeline is unaffected.
 

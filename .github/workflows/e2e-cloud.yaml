@@ -37,7 +37,7 @@ on:
         default: aws
         required: true
       confirm_cost:
-        description: 'Type RUN (exactly, all caps) to confirm you understand this provisions billed GPU hardware'
+        description: "Type 'apply' to confirm you understand this provisions billed GPU hardware"
         type: string
         required: true
   # Uncomment below to also run nightly. Caveat: a scheduled event has no
@@ -59,7 +59,7 @@ permissions:
 
 jobs:
   e2e-aws:
-    if: inputs.confirm_cost == 'RUN' && (inputs.clouds == 'aws' || inputs.clouds == 'all')
+    if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'aws' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest
     # Requires a GitHub Environment named "e2e-aws" — a repo admin should add
@@ -149,7 +149,7 @@ jobs:
           terraform -chdir=infra/terraform/aws destroy -auto-approve
 
   e2e-azure:
-    if: inputs.confirm_cost == 'RUN' && (inputs.clouds == 'azure' || inputs.clouds == 'all')
+    if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'azure' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest
     # Requires a GitHub Environment named "e2e-azure" — a repo admin should add
@@ -235,7 +235,7 @@ jobs:
           terraform -chdir=infra/terraform/azure destroy -auto-approve
 
   e2e-gcp:
-    if: inputs.confirm_cost == 'RUN' && (inputs.clouds == 'gcp' || inputs.clouds == 'all')
+    if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'gcp' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest
     # Requires a GitHub Environment named "e2e-gcp" — a repo admin should add
