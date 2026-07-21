@@ -173,7 +173,9 @@ data "aws_iam_policy_document" "deployer" {
     resources = ["*"]
   }
 
-  # Backend access: read/write main stack's remote state + lock during plan/apply. Scoped to these two resources, unlike the statements above (whose resources don't exist until the main stack applies).
+  # Backend access: read/write the main stack's remote state and its native S3
+  # lock file (a `.tflock` object) during plan/apply. Scoped to this bucket,
+  # unlike the statements above (whose resources don't exist until apply).
   statement {
     sid    = "TerraformStateBackend"
     effect = "Allow"
@@ -187,17 +189,6 @@ data "aws_iam_policy_document" "deployer" {
       aws_s3_bucket.state.arn,
       "${aws_s3_bucket.state.arn}/*",
     ]
-  }
-
-  statement {
-    sid    = "TerraformStateLock"
-    effect = "Allow"
-    actions = [
-      "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:DeleteItem",
-    ]
-    resources = [aws_dynamodb_table.lock.arn]
   }
 }
 

@@ -49,7 +49,6 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_E2E_REGION }}
       E2E_AWS_STATE_BUCKET: ${{ vars.AWS_E2E_STATE_BUCKET }}
-      E2E_AWS_STATE_LOCK_TABLE: ${{ vars.AWS_E2E_STATE_LOCK_TABLE }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -78,7 +77,6 @@ jobs:
             -backend-config="bucket=${E2E_AWS_STATE_BUCKET}" \
             -backend-config="key=e2e/aws/${{ inputs.cluster_name }}.tfstate" \
             -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${E2E_AWS_STATE_LOCK_TABLE}" \
             -backend-config="encrypt=true"
           terraform -chdir=infra/terraform/aws destroy -auto-approve
 

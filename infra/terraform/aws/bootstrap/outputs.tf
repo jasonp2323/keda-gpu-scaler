@@ -3,11 +3,6 @@ output "state_bucket" {
   value       = aws_s3_bucket.state.id
 }
 
-output "state_lock_table" {
-  description = "DynamoDB table used for Terraform state locking."
-  value       = aws_dynamodb_table.lock.name
-}
-
 output "region" {
   description = "AWS region the backend and OIDC role were created in."
   value       = var.region
@@ -25,7 +20,6 @@ output "backend_config_hint" {
       -backend-config="bucket=${aws_s3_bucket.state.id}" \
       -backend-config="key=e2e/aws/<cluster_name>.tfstate" \
       -backend-config="region=${var.region}" \
-      -backend-config="dynamodb_table=${aws_dynamodb_table.lock.name}" \
       -backend-config="encrypt=true"
   EOT
 }

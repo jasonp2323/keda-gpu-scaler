@@ -61,7 +61,6 @@ jobs:
             -backend-config="bucket=${{ vars.AWS_E2E_STATE_BUCKET }}" \
             -backend-config="key=plan/aws/${{ github.run_id }}.tfstate" \
             -backend-config="region=${{ vars.AWS_E2E_REGION }}" \
-            -backend-config="dynamodb_table=${{ vars.AWS_E2E_STATE_LOCK_TABLE }}" \
             -backend-config="encrypt=true"
 
       - name: terraform plan
