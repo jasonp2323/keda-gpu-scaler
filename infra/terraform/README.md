@@ -425,7 +425,7 @@ The manual `terraform apply` walkthroughs above have an automated counterpart:
 a Terratest suite at [`tests/terratest/`](../../tests/terratest/README.md)
 that applies each cloud's stack, asserts KEDA/`keda-gpu-scaler` scale a
 workload under real GPU load, then destroys the stack — via
-[`.github/workflows/e2e-cloud.yaml`](../../.github/workflows/e2e-cloud.yaml),
+[`.github/workflows/e2e-apply.yaml`](../../.github/workflows/e2e-apply.yaml),
 which is **manual and gated, not automatic** (`workflow_dispatch` only,
 requiring a `confirm_cost` input and a GitHub Environment approval gate),
 because every run bills real GPU hardware, same as running `terraform apply`

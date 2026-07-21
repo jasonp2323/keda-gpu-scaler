@@ -1,13 +1,13 @@
-# E2E Destroy
+# E2E Destroy (Manual)
 #
-# Manual "destroy button" for a leaked e2e cluster (e2e-cloud.yaml already
+# Manual "destroy button" for a leaked e2e cluster (e2e-apply.yaml already
 # self-destroys via defer + safety net; this covers the rare survivor).
 # Re-inits the backend to e2e/<cloud>/<cluster> and destroys it — supply
 # the exact cluster name (Project=keda-gpu-scaler tag, or the state bucket).
 #
 # Gated by write access + typing `destroy`; `environment:` supplies the
 # OIDC subject the trust policy expects, plus reviewer approval where set.
-name: E2E Destroy
+name: E2E Destroy (Manual)
 
 on:
   workflow_dispatch:
