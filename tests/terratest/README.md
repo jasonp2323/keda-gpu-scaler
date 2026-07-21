@@ -12,7 +12,7 @@ End-to-end setup, once per cloud you want to test. Each step links to its full d
 4. **Create Environments** — `e2e-aws` / `e2e-azure` / `e2e-gcp` under **Settings → Environments**, each with required reviewers (the approval gate for paid apply runs).
 5. **Enable Actions** — forks have Actions disabled by default: open the **Actions** tab and enable them. Optionally add the `INFRACOST_API_KEY` secret for cost estimates.
 6. **Run it:**
-   - Open a PR touching `infra/terraform/**` → the credential-less gates (fmt/validate/tflint/checkov) plus advisory plan/cost/docs run automatically.
+   - Open a PR touching `infra/terraform/**` → the credential-less gates (fmt/validate/tflint/checkov/cost/docs) run automatically — **no cloud connection needed**. Run a `terraform plan` on demand from **Actions → Terraform Plan** (pick the cloud).
    - Trigger the real GPU apply from **Actions → E2E Cloud Tests → Run workflow** → pick the cloud(s) and type `apply` in the confirm box. To tear down a leftover cluster, use **Actions → E2E Destroy** (pick the cloud, enter the cluster name, type `destroy`). For local runs see [Building & Running Tests](#building--running-tests).
 
 ## What the Suite Is
@@ -185,7 +185,8 @@ terraform destroy
 - **Scope:** Intentionally NOT run on every PR/push, matching the repo's "infra CI is manual only" stance.
 
 **Related workflows:**
-- **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking, credential-less); advisory per-cloud `plan` jobs that save the plan as an artifact, post an updating PR comment + job summary, and upload diagnostics; an Infracost `cost` estimate per cloud (needs `INFRACOST_API_KEY`); and a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
+- **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`, **fully credential-less (never connects to a cloud account)**: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking); an Infracost `cost` estimate per cloud (needs only `INFRACOST_API_KEY`, no cloud creds); and a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
+- **`terraform-plan.yml`** — manual `workflow_dispatch` (pick a cloud) that runs `terraform plan` with OIDC and saves the plan as an artifact + tf-summarize digest + job summary. Moved out of the PR pipeline so PRs never require cloud connectivity; runs in the `e2e-<cloud>` Environment (same OIDC subject as apply/destroy).
 
 ## Who can deploy / how it's gated
 
@@ -207,11 +208,12 @@ The workflows always declare `environment: e2e-<cloud>` (needed for the OIDC sub
 
 CI never stores long-lived cloud keys. Instead, GitHub Actions mints a short-lived OIDC token per job and exchanges it for temporary cloud credentials (AWS `AssumeRoleWithWebIdentity`, Azure federated credential, GCP Workload Identity Federation). This section is the one-time setup a maintainer runs per cloud account.
 
-Two workflows consume these credentials:
-- `.github/workflows/e2e-cloud.yaml` — the e2e apply/destroy jobs, gated by a GitHub **Environment** (`e2e-aws` / `e2e-azure` / `e2e-gcp`).
-- `.github/workflows/infra-validate.yaml` — the advisory `plan-*` jobs, triggered on `pull_request` with **no Environment**.
+Three workflows consume these credentials, and **all run in a GitHub Environment** (`e2e-aws` / `e2e-azure` / `e2e-gcp`):
+- `.github/workflows/e2e-cloud.yaml` — the e2e apply job.
+- `.github/workflows/terraform-plan.yml` — the manual `plan-*` jobs.
+- `.github/workflows/destroy.yaml` — the manual destroy jobs.
 
-These two trigger types present **different OIDC subjects** to the cloud provider, so trust policies/federated credentials must allow both if the plan jobs are also meant to authenticate.
+Because all three run in the Environment, they present the **same** OIDC subject (`repo:<repo>:environment:e2e-<cloud>`). The trust policy therefore only needs the `environment:` subjects. (The bootstrap also emits a `pull_request` subject — a leftover from when plan ran on PRs; it's now unused by any workflow. Harmless to leave; drop it for tighter least-privilege.)
 
 ### AWS
 
@@ -223,9 +225,10 @@ These two trigger types present **different OIDC subjects** to the cloud provide
      --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
    ```
 
-2. **Create an IAM role** federated to that provider. The subject differs by workflow:
-   - `e2e-cloud.yaml` (Environment `e2e-aws`): `repo:jasonp2323/keda-gpu-scaler:environment:e2e-aws`
-   - `infra-validate.yaml` (`plan-aws`, no Environment): `repo:jasonp2323/keda-gpu-scaler:pull_request`
+2. **Create an IAM role** federated to that provider. All cloud workflows (apply, manual plan, destroy) run in the `e2e-aws` Environment, so they present one subject:
+   - `repo:jasonp2323/keda-gpu-scaler:environment:e2e-aws`
+
+   (The bootstrap also adds a `repo:jasonp2323/keda-gpu-scaler:pull_request` subject — now unused since plan moved to a manual, Environment-scoped workflow. Harmless, or drop it for least privilege.)
 
    **Immutable `sub` (repos created after 2026-07-15):** GitHub issues the `sub` claim as `repo:OWNER@OWNER_ID/REPO@REPO_ID:...` for newer repos. A trust policy matching only the classic `repo:OWNER/REPO:...` form fails with *"Not authorized to perform sts:AssumeRoleWithWebIdentity."* — so match **both**. Fetch the numeric IDs:
    ```bash
