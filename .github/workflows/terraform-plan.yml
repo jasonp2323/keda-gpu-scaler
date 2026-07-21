@@ -76,6 +76,52 @@ jobs:
           echo "plan exit: ${code}"
           exit 0   # advisory job — never fail here
 
+      - name: Set up Infracost (aws)
+        if: always()
+        continue-on-error: true
+        uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      # Credential-less HCL cost estimate into the job summary (hourly + monthly).
+      - name: Cost estimate (aws)
+        if: always()
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          {
+            echo 'region                  = "us-east-2"'
+            echo 'cluster_name            = "keda-gpu-scaler-ci-cost"'
+            echo 'gpu_instance_type       = "g5.xlarge"'
+            echo 'gpu_node_count          = 1'
+            echo 'scaler_image_repository = "ghcr.io/pmady/keda-gpu-scaler"'
+            echo 'helm_timeout            = 600'
+            echo 'tags                    = {}'
+          } > /tmp/cost-aws.tfvars
+          if ! infracost breakdown --path=infra/terraform/aws --terraform-var-file=/tmp/cost-aws.tfvars \
+                 --format=json --out-file=/tmp/infracost-aws.json; then
+            echo "infracost breakdown failed (INFRACOST_API_KEY not set?)"; exit 0
+          fi
+          {
+            echo "## Cost — aws (Infracost)"
+            echo
+            monthly=$(jq -r '.totalMonthlyCost // empty' /tmp/infracost-aws.json)
+            if [ -n "$monthly" ]; then
+              hourly=$(awk "BEGIN { printf \"%.4f\", ${monthly}/730 }")
+              echo "Hourly: **\$${hourly}** | Monthly: **\$${monthly}**"
+              echo
+              echo '<details><summary>Full cost table</summary>'
+              echo
+              echo '```'
+              infracost output --path=/tmp/infracost-aws.json --format=table || echo "infracost output failed"
+              echo '```'
+              echo
+              echo '</details>'
+            else
+              echo "cost unavailable (no totalMonthlyCost in breakdown output)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload plan artifact (aws)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -217,6 +263,43 @@ jobs:
           code=${PIPESTATUS[0]}
           echo "plan exit: ${code}"
           exit 0   # advisory job — never fail here
+
+      - name: Set up Infracost (azure)
+        if: always()
+        continue-on-error: true
+        uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      # Credential-less HCL cost estimate into the job summary (hourly + monthly).
+      - name: Cost estimate (azure)
+        if: always()
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          if ! infracost breakdown --path=infra/terraform/azure \
+                 --format=json --out-file=/tmp/infracost-azure.json; then
+            echo "infracost breakdown failed (INFRACOST_API_KEY not set?)"; exit 0
+          fi
+          {
+            echo "## Cost — azure (Infracost)"
+            echo
+            monthly=$(jq -r '.totalMonthlyCost // empty' /tmp/infracost-azure.json)
+            if [ -n "$monthly" ]; then
+              hourly=$(awk "BEGIN { printf \"%.4f\", ${monthly}/730 }")
+              echo "Hourly: **\$${hourly}** | Monthly: **\$${monthly}**"
+              echo
+              echo '<details><summary>Full cost table</summary>'
+              echo
+              echo '```'
+              infracost output --path=/tmp/infracost-azure.json --format=table || echo "infracost output failed"
+              echo '```'
+              echo
+              echo '</details>'
+            else
+              echo "cost unavailable (no totalMonthlyCost in breakdown output)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload plan artifact (azure)
         if: always()
@@ -363,6 +446,56 @@ jobs:
           code=${PIPESTATUS[0]}
           echo "plan exit: ${code}"
           exit 0   # advisory job — never fail here
+
+      - name: Set up Infracost (gcp)
+        if: always()
+        continue-on-error: true
+        uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      # Credential-less HCL cost estimate into the job summary (hourly + monthly).
+      - name: Cost estimate (gcp)
+        if: always()
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          {
+            echo 'project_id              = "${{ vars.GCP_E2E_PROJECT }}"'
+            echo 'region                  = "us-central1"'
+            echo 'zone                    = "us-central1-a"'
+            echo 'cluster_name            = "keda-gpu-scaler-ci-cost"'
+            echo 'gpu_machine_type        = "n1-standard-4"'
+            echo 'gpu_type                = "nvidia-tesla-t4"'
+            echo 'gpu_per_node            = 1'
+            echo 'gpu_node_count          = 1'
+            echo 'scaler_image_repository = "ghcr.io/pmady/keda-gpu-scaler"'
+            echo 'helm_timeout            = 1800'
+            echo 'labels                  = {}'
+          } > /tmp/cost-gcp.tfvars
+          if ! infracost breakdown --path=infra/terraform/gcp --terraform-var-file=/tmp/cost-gcp.tfvars \
+                 --format=json --out-file=/tmp/infracost-gcp.json; then
+            echo "infracost breakdown failed (INFRACOST_API_KEY not set?)"; exit 0
+          fi
+          {
+            echo "## Cost — gcp (Infracost)"
+            echo
+            monthly=$(jq -r '.totalMonthlyCost // empty' /tmp/infracost-gcp.json)
+            if [ -n "$monthly" ]; then
+              hourly=$(awk "BEGIN { printf \"%.4f\", ${monthly}/730 }")
+              echo "Hourly: **\$${hourly}** | Monthly: **\$${monthly}**"
+              echo
+              echo '<details><summary>Full cost table</summary>'
+              echo
+              echo '```'
+              infracost output --path=/tmp/infracost-gcp.json --format=table || echo "infracost output failed"
+              echo '```'
+              echo
+              echo '</details>'
+            else
+              echo "cost unavailable (no totalMonthlyCost in breakdown output)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload plan artifact (gcp)
         if: always()
