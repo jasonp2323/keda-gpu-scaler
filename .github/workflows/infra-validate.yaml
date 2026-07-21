@@ -1,31 +1,18 @@
 # Infra Validate
 #
-# Cheap, per-PR "Tier 1-2" gate for the Terraform stacks under
-# infra/terraform/{aws,azure,gcp}. This is the free, fast complement to the
-# expensive apply-level suite in e2e-cloud.yaml (which provisions real billed
-# GPU hardware and is workflow_dispatch-only).
+# Cheap per-PR gate for infra/terraform/{aws,azure,gcp}, complementing the
+# expensive real-GPU suite in e2e-cloud.yaml (workflow_dispatch-only).
 #
-# Two tiers of checks:
-#   - fmt / validate / tflint / checkov: credential-less, run against every
-#     PR, BLOCKING. They only read provider schemas, lint rules, and static
-#     IaC scan rules — no cloud account is ever contacted, so they can't leak
-#     secrets or cost money.
-#   - plan: OIDC-authed against the real cloud (read-only), ADVISORY only
-#     (continue-on-error: true at the job level). It is not a merge blocker
-#     because these stacks configure their kubernetes/helm providers from the
-#     cluster endpoint that only exists AFTER `apply` — a fresh, stateless
-#     `terraform plan` against an empty state can legitimately fail or defer
-#     those resources. Reviewers should still read plan output when it
-#     succeeds; a failure here just means "inconclusive," not "broken." Each
-#     plan job also uploads a plan artifact/diagnostics, posts a digest and
-#     change table to the job summary, and updates a single PR comment (per
-#     cloud) in place across pushes.
-#   - cost: PR-only, credential-less (Infracost parses HCL statically) advisory
-#     matrix over the three clouds. Posts/refreshes one cost comment per cloud
-#     and a job-summary breakdown.
-#   - docs: PR-only, single job (not matrixed, to avoid racing pushes) that
-#     regenerates each stack's terraform-docs block in place and pushes the
-#     change back to the PR branch if anything changed.
+#   - fmt/validate/tflint/checkov: credential-less, BLOCKING on every PR.
+#   - plan: OIDC read-only, ADVISORY (continue-on-error) — these stacks'
+#     kubernetes/helm providers depend on the post-apply cluster endpoint,
+#     so a stateless plan can legitimately fail/defer. A failure here means
+#     "inconclusive," not "broken." Posts a digest, change table, and a
+#     per-cloud PR comment updated in place.
+#   - cost: PR-only, credential-less Infracost matrix; posts a PR comment
+#     and job-summary breakdown per cloud.
+#   - docs: PR-only, single job (avoids racing pushes) that regenerates
+#     terraform-docs and pushes the change back to the PR branch.
 name: Infra Validate
 
 on:
@@ -100,12 +87,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: tflint --chdir=infra/terraform/${{ matrix.cloud }} -f compact
 
-  # Checkov: static Terraform security/misconfiguration scan. Credential-less
-  # (reads the Terraform source only, no cloud account contacted) and
-  # BLOCKING, same tier as fmt/validate/tflint above. If a finding is
-  # acceptable for these throwaway test clusters (e.g. a public API
-  # endpoint, no encryption at rest), suppress it via a repo-root
-  # .checkov.yaml (skip-check) or an inline
+  # Static, credential-less security scan; BLOCKING like fmt/validate/tflint.
+  # Suppress acceptable findings via .checkov.yaml or an inline
   # `#checkov:skip=<CHECK_ID>:<reason>` comment — don't disable this gate.
   checkov:
     name: checkov
@@ -118,14 +101,13 @@ jobs:
         with:
           directory: infra/terraform
           framework: terraform
+          config_file: .checkov.yaml
           output_format: cli
           soft_fail: false
 
-  # Infracost: static, credential-less monthly-cost estimate parsed from the
-  # Terraform HCL (no cloud account contacted, no plan required). PR-only,
-  # matrixed over the three clouds, entirely advisory — INFRACOST_API_KEY
-  # missing or a breakdown failure just yields a "cost unavailable" comment,
-  # never a failed job.
+  # Static, credential-less cost estimate (Infracost parses HCL, no plan
+  # needed). Advisory — a missing key or failed breakdown just yields a
+  # "cost unavailable" comment, never a failed job.
   cost:
     name: infracost (${{ matrix.cloud }})
     runs-on: ubuntu-latest
@@ -146,12 +128,8 @@ jobs:
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
-      # Materialize a per-cloud tfvars file so the stack's required
-      # (no-default) variables resolve — Infracost only parses HCL, it never
-      # talks to a cloud account, so these are just placeholders matching the
-      # plan-*/e2e-cloud.yaml conventions. Azure has no required variables
-      # (every infra/terraform/azure/variables.tf entry has a default), so it
-      # gets no var-file.
+      # Placeholder tfvars so required (no-default) vars resolve for
+      # Infracost's static parse. Azure has no required vars, so no file.
       - name: Write cost tfvars (${{ matrix.cloud }})
         run: |
           case "${{ matrix.cloud }}" in
@@ -297,10 +275,8 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # terraform-docs: regenerates the injected block in each stack's README.md
-  # in place and pushes the change back onto the PR branch. Single job (NOT
-  # matrixed) so at most one push happens per run — a matrix here would have
-  # three jobs racing to push to the same branch.
+  # Regenerates each stack's README.md doc block and pushes back to the PR
+  # branch. Single job (not matrixed) to avoid three jobs racing to push.
   docs:
     name: terraform-docs
     runs-on: ubuntu-latest
@@ -318,7 +294,7 @@ jobs:
           working-dir: infra/terraform/aws
           output-file: README.md
           output-method: inject
-          git-push: "false"
+          git-push: "true"
 
       - name: terraform-docs (azure)
         uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
@@ -326,7 +302,7 @@ jobs:
           working-dir: infra/terraform/azure
           output-file: README.md
           output-method: inject
-          git-push: "false"
+          git-push: "true"
 
       - name: terraform-docs (gcp)
         uses: terraform-docs/gh-actions@6de6da0cefcc6b4b7a5cbea4d79d97060733093c # v1.4.1
@@ -334,16 +310,4 @@ jobs:
           working-dir: infra/terraform/gcp
           output-file: README.md
           output-method: inject
-          git-push: "false"
-
-      - name: Commit and push docs
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add infra/terraform/*/README.md
-          if ! git diff --cached --quiet; then
-            git commit -m "docs: update terraform-docs"
-            git push
-          else
-            echo "no doc changes"
-          fi
+          git-push: "true"

@@ -1,15 +1,12 @@
-###############################################################################
 # S3 bucket for the main stack's remote Terraform state
-###############################################################################
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 resource "aws_s3_bucket" "state" {
-  bucket = var.state_bucket_name != "" ? var.state_bucket_name : "aws-s3-tfstate-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.region}-an"
+  bucket           = var.state_bucket_name != "" ? var.state_bucket_name : "aws-s3-tfstate-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.region}-an"
   bucket_namespace = "account-regional"
 
-  # Deliberately no force_destroy: this bucket holds Terraform state, losing
-  # it should never be a side effect of an unrelated `terraform destroy`.
+  # Deliberately no force_destroy: losing this shouldn't be a side effect of an unrelated destroy.
 }
 
 resource "aws_s3_bucket_versioning" "state" {
@@ -39,9 +36,7 @@ resource "aws_s3_bucket_public_access_block" "state" {
   restrict_public_buckets = true
 }
 
-###############################################################################
 # DynamoDB table for state locking
-###############################################################################
 
 resource "aws_dynamodb_table" "lock" {
   name         = var.state_lock_table_name
