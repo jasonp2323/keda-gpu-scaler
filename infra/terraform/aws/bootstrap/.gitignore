@@ -1,0 +1,14 @@
+# Local .terraform directory
+.terraform/
+
+# This config genuinely runs with local state - never commit it.
+*.tfstate
+*.tfstate.*
+
+# Variable files with real values (keep the .example)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Lock file is intentionally committed (see infra/terraform/.gitignore) - do NOT ignore it:
+# .terraform.lock.hcl

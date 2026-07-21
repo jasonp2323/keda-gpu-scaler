@@ -1,4 +1,4 @@
-.PHONY: build proto test test-e2e fmt check-fmt lint clean docker-build docker-push docker-release deploy undeploy helm-lint helm-template helm-test help
+.PHONY: build proto test test-e2e test-terratest-aws test-terratest-azure test-terratest-gcp fmt check-fmt lint clean docker-build docker-push docker-release deploy undeploy helm-lint helm-template helm-test help
 
 BINARY_NAME := keda-gpu-scaler
 IMAGE_REPO := ghcr.io/pmady/keda-gpu-scaler
@@ -32,6 +32,15 @@ test: ## Run unit tests (pkg + cmd; e2e is build-tagged out, run via test-e2e)
 
 test-e2e: ## Run e2e integration tests (no GPU required — uses mock collector)
 	go test -v -tags=e2e -race ./tests/e2e/...
+
+test-terratest-aws: ## Run AWS terratest e2e suite (applies real EKS infra — costs money, needs AWS creds/quota)
+	go test -tags e2e_aws -timeout 60m -v ./tests/terratest/...
+
+test-terratest-azure: ## Run Azure terratest e2e suite (applies real AKS infra — costs money, needs Azure creds/quota)
+	go test -tags e2e_azure -timeout 60m -v ./tests/terratest/...
+
+test-terratest-gcp: ## Run GCP terratest e2e suite (applies real GKE infra — costs money, needs GCP creds/quota)
+	go test -tags e2e_gcp -timeout 60m -v ./tests/terratest/...
 
 fmt: ## Format Go source files
 	go fmt ./...

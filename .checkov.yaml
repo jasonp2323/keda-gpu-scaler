@@ -1,0 +1,77 @@
+# Checkov config for infra/terraform (wired into .github/workflows/infra-validate.yaml).
+#
+# These stacks provision throwaway, public, cheap GPU *test* clusters (see
+# infra/AGENTS.md) — not production. The skips below are production-hardening
+# policies that either don't apply to ephemeral test infra or would add cost and
+# scope the design deliberately rejects (private clusters, CMKs, paid SLAs,
+# cross-region replication). Fix a finding instead of skipping it when it's cheap
+# and sensible; keep this list curated, not a blanket disable.
+skip-check:
+  # Remote-state S3 bucket + DynamoDB lock table (throwaway test state).
+  - CKV_AWS_18    # S3 access logging — needs a second log bucket; test-only state
+  - CKV_AWS_144   # S3 cross-region replication — needless cost for throwaway state
+  - CKV_AWS_145   # S3 KMS CMK — bucket already uses AES256 SSE; CMK is overkill here
+  - CKV2_AWS_61   # S3 lifecycle config — state versions are retained on purpose
+  - CKV2_AWS_62   # S3 event notifications — not needed for a state bucket
+  - CKV_AWS_119   # DynamoDB CMK — table holds only ephemeral lock records
+  - CKV_AWS_28    # DynamoDB PITR — nothing to recover in a lock table
+
+  # OIDC deployer identities — broad by necessity, scoped to one repo's CI.
+  - CKV_AWS_107   # IAM credentials-exposure — deployer must manage whole clusters
+  - CKV_AWS_109   # IAM permissions-management without constraints — same
+  - CKV_AWS_110   # IAM privilege-escalation — same
+  - CKV_AWS_111   # IAM write without constraints — same
+  - CKV_AWS_356   # IAM resource "*" — cluster create/destroy spans many ARNs
+  - CKV_AZURE_249 # Azure OIDC trust — subject pinned to repo + environment/PR
+  - CKV_GCP_125   # GCP OIDC trust — subject pinned to repo + environment/PR
+  - CKV_GCP_41    # SA user/token-creator at project level — WIF deployer needs it
+  - CKV_GCP_49    # SA impersonation/management — WIF deployer needs it
+
+  # Azure remote-state storage account (throwaway test state).
+  - CKV2_AZURE_1  # CMK encryption — MS-managed keys are fine for test state
+  - CKV2_AZURE_21 # blob read logging
+  - CKV2_AZURE_33 # private endpoint — public test infra
+  - CKV2_AZURE_38 # soft-delete
+  - CKV2_AZURE_40 # shared-key auth — azurerm backend authenticates with account key
+  - CKV2_AZURE_41 # SAS expiration policy
+  - CKV_AZURE_33  # queue-service logging
+  - CKV_AZURE_59  # disallow public network access — public test infra
+  - CKV_AZURE_206 # geo-replication — LRS is fine for throwaway state
+
+  # AKS test cluster — public, cheap, fixed pool (infra/AGENTS.md).
+  - CKV2_AZURE_29 # Azure CNI — kubenet is fine for tests
+  - CKV_AZURE_115 # private cluster
+  - CKV_AZURE_116 # Azure Policy add-on
+  - CKV_AZURE_117 # disk encryption set
+  - CKV_AZURE_141 # disable local admin account
+  - CKV_AZURE_168 # min 50 pods per node
+  - CKV_AZURE_170 # paid (Uptime SLA) SKU — needless cost for tests
+  - CKV_AZURE_171 # upgrade channel
+  - CKV_AZURE_172 # Secrets Store CSI autorotation
+  - CKV_AZURE_226 # ephemeral OS disks
+  - CKV_AZURE_227 # temp-disk/cache/host encryption
+  - CKV_AZURE_232 # only critical system pods on system nodes
+  - CKV_AZURE_4   # AKS -> Azure Monitor logging
+  - CKV_AZURE_6   # API server authorized IP ranges
+  - CKV_AZURE_7   # network policy
+
+  # GKE test cluster + GCS state bucket — public, cheap, fixed pool.
+  - CKV2_GCP_18   # dedicated (non-default) firewall
+  - CKV_GCP_10    # automatic node upgrade
+  - CKV_GCP_12    # network policy
+  - CKV_GCP_13    # disable client-cert auth
+  - CKV_GCP_20    # master authorized networks
+  - CKV_GCP_25    # private cluster
+  - CKV_GCP_26    # VPC flow logs
+  - CKV_GCP_61    # VPC flow logs + intranode visibility
+  - CKV_GCP_62    # GCS bucket access logging
+  - CKV_GCP_64    # private nodes
+  - CKV_GCP_65    # RBAC via Google Groups
+  - CKV_GCP_66    # binary authorization
+  - CKV_GCP_68    # secure boot for shielded nodes
+  - CKV_GCP_69    # GKE metadata server
+  - CKV_GCP_70    # release channel
+  - CKV_GCP_74    # private_ip_google_access
+
+  # Module sourcing.
+  - CKV_TF_1      # module commit hash — registry modules are version-pinned (~>)

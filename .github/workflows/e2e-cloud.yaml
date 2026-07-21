@@ -1,0 +1,421 @@
+# E2E Cloud Tests
+#
+# Provisions REAL cloud GPU infra (AWS EKS / Azure AKS / GCP GKE) via the
+# Terratest suite at tests/terratest/, validates KEDA scaling against actual
+# NVIDIA hardware, then tears it down. COSTS REAL MONEY — ~$0.55-1/hr per
+# cloud (see infra/terraform/README.md's cost banner).
+#
+# Prerequisites per cloud: GPU service quota granted (default is 0), and
+# OIDC federation set up (AWS_E2E_ROLE_ARN / AZURE_E2E_CLIENT_ID+TENANT_ID+
+# SUBSCRIPTION_ID / GCP_E2E_WIF_PROVIDER+GCP_E2E_SERVICE_ACCOUNT secrets).
+#
+# Manual-only (workflow_dispatch): each run bills real GPU hardware.
+name: E2E Cloud Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      clouds:
+        description: 'Which cloud suite(s) to run'
+        type: choice
+        options:
+          - aws
+          - azure
+          - gcp
+          - all
+        default: aws
+        required: true
+      confirm_cost:
+        description: "Type 'apply' to confirm you understand this provisions billed GPU hardware"
+        type: string
+        required: true
+  # Uncomment to also run nightly — a scheduled event has no
+  # inputs.confirm_cost, so the gate below would need reworking first.
+  # schedule:
+  #   - cron: '0 6 * * *'
+
+concurrency:
+  # Keyed on workflow+cloud so overlapping expensive runs queue, not race.
+  group: ${{ github.workflow }}-${{ inputs.clouds }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-aws:
+    if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'aws' || inputs.clouds == 'all')
+    timeout-minutes: 90
+    runs-on: ubuntu-latest
+    # Environment "e2e-aws" — add required reviewers so spend needs approval.
+    environment: e2e-aws
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Shared with the teardown safety-net step below so it targets the
+      # exact cluster the test created.
+      AWS_REGION: ${{ vars.AWS_E2E_REGION }}
+      E2E_CLUSTER_NAME: keda-gpu-e2e-${{ github.run_id }}
+      E2E_K8S_VERSION: '1.33'
+      E2E_GPU_INSTANCE_TYPE: g5.xlarge
+      E2E_GPU_NODE_COUNT: '1'
+      E2E_SCALER_IMAGE_REPOSITORY: ghcr.io/pmady/keda-gpu-scaler
+      E2E_SCALER_IMAGE_TAG: v0.5.0
+      E2E_HELM_TIMEOUT: '900'
+      # Remote state backend created by infra/terraform/aws/bootstrap.
+      E2E_AWS_STATE_BUCKET: ${{ vars.AWS_E2E_STATE_BUCKET }}
+      E2E_AWS_STATE_LOCK_TABLE: ${{ vars.AWS_E2E_STATE_LOCK_TABLE }}
+      # Where the Go test writes failure diagnostics; uploaded as an artifact below.
+      E2E_ARTIFACTS_DIR: ${{ github.workspace }}/e2e-artifacts
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.25'
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.6
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@517a711dbcd0e402f90c77e7e2f81e849156e31d # v6.2.2
+        with:
+          role-to-assume: ${{ secrets.AWS_E2E_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_E2E_REGION }}
+
+      - name: Set up Infracost (AWS)
+        continue-on-error: true
+        uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      # Credential-less HCL cost estimate into the job summary (hourly + monthly).
+      - name: Cost estimate (AWS)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          {
+            echo "region                  = \"${AWS_REGION}\""
+            echo 'cluster_name            = "keda-gpu-scaler-ci-cost"'
+            echo "gpu_instance_type       = \"${E2E_GPU_INSTANCE_TYPE}\""
+            echo "gpu_node_count          = ${E2E_GPU_NODE_COUNT}"
+            echo "scaler_image_repository = \"${E2E_SCALER_IMAGE_REPOSITORY}\""
+            echo "helm_timeout            = ${E2E_HELM_TIMEOUT}"
+            echo 'tags                    = {}'
+          } > /tmp/cost-aws.tfvars
+          if ! infracost breakdown --path=infra/terraform/aws --terraform-var-file=/tmp/cost-aws.tfvars \
+                 --format=json --out-file=/tmp/infracost-aws.json; then
+            echo "infracost breakdown failed (INFRACOST_API_KEY not set?)"; exit 0
+          fi
+          {
+            echo "## Cost — aws (Infracost)"
+            echo
+            monthly=$(jq -r '.totalMonthlyCost // empty' /tmp/infracost-aws.json)
+            if [ -n "$monthly" ]; then
+              hourly=$(awk "BEGIN { printf \"%.4f\", ${monthly}/730 }")
+              echo "Hourly: **\$${hourly}** | Monthly: **\$${monthly}**"
+              echo
+              echo '<details><summary>Full cost table</summary>'
+              echo
+              echo '```'
+              infracost output --path=/tmp/infracost-aws.json --format=table || echo "infracost output failed"
+              echo '```'
+              echo
+              echo '</details>'
+            else
+              echo "cost unavailable (no totalMonthlyCost in breakdown output)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run AWS terratest e2e suite
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          mkdir -p "$E2E_ARTIFACTS_DIR"
+          set -o pipefail
+          go test -tags e2e_aws -timeout 60m -v ./tests/terratest/ 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-aws.log"
+
+      - name: Upload e2e diagnostics (AWS)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-diagnostics-aws-${{ github.run_id }}
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Best-effort safety net: the test's own `defer` is the primary
+      # teardown path; this only guards a panicked/killed test. Needs the
+      # same env values as the apply above to target the right resources.
+      - name: Terraform destroy safety net (AWS)
+        if: always()
+        continue-on-error: true
+        env:
+          TF_VAR_region: ${{ env.AWS_REGION }}
+          TF_VAR_cluster_name: ${{ env.E2E_CLUSTER_NAME }}
+          TF_VAR_kubernetes_version: ${{ env.E2E_K8S_VERSION }}
+          TF_VAR_tags: '{}'
+          TF_VAR_gpu_instance_type: ${{ env.E2E_GPU_INSTANCE_TYPE }}
+          TF_VAR_gpu_node_count: ${{ env.E2E_GPU_NODE_COUNT }}
+          TF_VAR_scaler_image_repository: ${{ env.E2E_SCALER_IMAGE_REPOSITORY }}
+          TF_VAR_helm_timeout: ${{ env.E2E_HELM_TIMEOUT }}
+        # Re-init the remote backend to the same state key the test used, then destroy.
+        run: |
+          terraform -chdir=infra/terraform/aws init -reconfigure -input=false \
+            -backend-config="bucket=${E2E_AWS_STATE_BUCKET}" \
+            -backend-config="key=e2e/aws/${E2E_CLUSTER_NAME}.tfstate" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${E2E_AWS_STATE_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+          terraform -chdir=infra/terraform/aws destroy -auto-approve
+
+  e2e-azure:
+    if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'azure' || inputs.clouds == 'all')
+    timeout-minutes: 90
+    runs-on: ubuntu-latest
+    # Environment "e2e-azure" — add required reviewers so spend needs approval.
+    environment: e2e-azure
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Shared with the teardown safety-net step below so it targets the
+      # exact cluster the test created.
+      E2E_AZURE_LOCATION: eastus
+      E2E_AZURE_RESOURCE_GROUP: keda-gpu-e2e-${{ github.run_id }}-rg
+      E2E_CLUSTER_NAME: keda-gpu-e2e-${{ github.run_id }}
+      E2E_K8S_VERSION: '1.33'
+      E2E_SCALER_IMAGE_TAG: v0.5.0
+      E2E_HELM_TIMEOUT: '900'
+      # Remote state backend created by infra/terraform/azure/bootstrap.
+      E2E_AZURE_STATE_RESOURCE_GROUP: ${{ vars.AZURE_E2E_STATE_RESOURCE_GROUP }}
+      E2E_AZURE_STATE_STORAGE_ACCOUNT: ${{ vars.AZURE_E2E_STATE_STORAGE_ACCOUNT }}
+      E2E_AZURE_STATE_CONTAINER: ${{ vars.AZURE_E2E_STATE_CONTAINER }}
+      # Where the Go test writes failure diagnostics; uploaded as an artifact below.
+      E2E_ARTIFACTS_DIR: ${{ github.workspace }}/e2e-artifacts
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.25'
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.6
+
+      - name: Azure login (OIDC)
+        uses: azure/login@93381592711f247e165c389ebb30b596c84cdc48 # v3.0.0
+        with:
+          client-id: ${{ secrets.AZURE_E2E_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_E2E_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
+
+      - name: Set up Infracost (Azure)
+        continue-on-error: true
+        uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      # Credential-less HCL cost estimate into the job summary (hourly + monthly).
+      - name: Cost estimate (Azure)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          if ! infracost breakdown --path=infra/terraform/azure \
+                 --format=json --out-file=/tmp/infracost-azure.json; then
+            echo "infracost breakdown failed (INFRACOST_API_KEY not set?)"; exit 0
+          fi
+          {
+            echo "## Cost — azure (Infracost)"
+            echo
+            monthly=$(jq -r '.totalMonthlyCost // empty' /tmp/infracost-azure.json)
+            if [ -n "$monthly" ]; then
+              hourly=$(awk "BEGIN { printf \"%.4f\", ${monthly}/730 }")
+              echo "Hourly: **\$${hourly}** | Monthly: **\$${monthly}**"
+              echo
+              echo '<details><summary>Full cost table</summary>'
+              echo
+              echo '```'
+              infracost output --path=/tmp/infracost-azure.json --format=table || echo "infracost output failed"
+              echo '```'
+              echo
+              echo '</details>'
+            else
+              echo "cost unavailable (no totalMonthlyCost in breakdown output)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Azure terratest e2e suite
+        env:
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          mkdir -p "$E2E_ARTIFACTS_DIR"
+          set -o pipefail
+          go test -tags e2e_azure -timeout 60m -v ./tests/terratest/ 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-azure.log"
+
+      - name: Upload e2e diagnostics (Azure)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-diagnostics-azure-${{ github.run_id }}
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Best-effort safety net: the test's own `defer` is the primary
+      # teardown path; this only guards a panicked/killed test. Needs the
+      # same env values as the apply above to target the right resources.
+      - name: Terraform destroy safety net (Azure)
+        if: always()
+        continue-on-error: true
+        env:
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
+          TF_VAR_cluster_name: ${{ env.E2E_CLUSTER_NAME }}
+          TF_VAR_location: ${{ env.E2E_AZURE_LOCATION }}
+          TF_VAR_resource_group_name: ${{ env.E2E_AZURE_RESOURCE_GROUP }}
+        # Re-init the remote backend to the same state key the test used, then destroy.
+        run: |
+          terraform -chdir=infra/terraform/azure init -reconfigure -input=false \
+            -backend-config="resource_group_name=${E2E_AZURE_STATE_RESOURCE_GROUP}" \
+            -backend-config="storage_account_name=${E2E_AZURE_STATE_STORAGE_ACCOUNT}" \
+            -backend-config="container_name=${E2E_AZURE_STATE_CONTAINER:-tfstate}" \
+            -backend-config="key=e2e/azure/${E2E_CLUSTER_NAME}.tfstate"
+          terraform -chdir=infra/terraform/azure destroy -auto-approve
+
+  e2e-gcp:
+    if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'gcp' || inputs.clouds == 'all')
+    timeout-minutes: 90
+    runs-on: ubuntu-latest
+    # Environment "e2e-gcp" — add required reviewers so spend needs approval.
+    environment: e2e-gcp
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Shared with the teardown safety-net step below so it targets the
+      # exact cluster the test created.
+      GOOGLE_PROJECT: ${{ vars.GCP_E2E_PROJECT }}
+      E2E_GCP_REGION: us-central1
+      E2E_GCP_ZONE: us-central1-a
+      E2E_CLUSTER_NAME: keda-gpu-e2e-${{ github.run_id }}
+      E2E_K8S_VERSION: '1.33'
+      E2E_SCALER_IMAGE_REPOSITORY: ghcr.io/pmady/keda-gpu-scaler
+      E2E_SCALER_IMAGE_TAG: v0.5.0
+      E2E_HELM_TIMEOUT: '1800'
+      # Remote state backend created by infra/terraform/gcp/bootstrap.
+      E2E_GCP_STATE_BUCKET: ${{ vars.GCP_E2E_STATE_BUCKET }}
+      # Where the Go test writes failure diagnostics; uploaded as an artifact below.
+      E2E_ARTIFACTS_DIR: ${{ github.workspace }}/e2e-artifacts
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.25'
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.6
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.GCP_E2E_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}
+
+      - name: Set up Infracost (GCP)
+        continue-on-error: true
+        uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      # Credential-less HCL cost estimate into the job summary (hourly + monthly).
+      - name: Cost estimate (GCP)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          {
+            echo "project_id              = \"${GOOGLE_PROJECT}\""
+            echo "region                  = \"${E2E_GCP_REGION}\""
+            echo "zone                    = \"${E2E_GCP_ZONE}\""
+            echo 'cluster_name            = "keda-gpu-scaler-ci-cost"'
+            echo 'gpu_machine_type        = "n1-standard-4"'
+            echo 'gpu_type                = "nvidia-tesla-t4"'
+            echo 'gpu_per_node            = 1'
+            echo 'gpu_node_count          = 1'
+            echo "scaler_image_repository = \"${E2E_SCALER_IMAGE_REPOSITORY}\""
+            echo "helm_timeout            = ${E2E_HELM_TIMEOUT}"
+            echo 'labels                  = {}'
+          } > /tmp/cost-gcp.tfvars
+          if ! infracost breakdown --path=infra/terraform/gcp --terraform-var-file=/tmp/cost-gcp.tfvars \
+                 --format=json --out-file=/tmp/infracost-gcp.json; then
+            echo "infracost breakdown failed (INFRACOST_API_KEY not set?)"; exit 0
+          fi
+          {
+            echo "## Cost — gcp (Infracost)"
+            echo
+            monthly=$(jq -r '.totalMonthlyCost // empty' /tmp/infracost-gcp.json)
+            if [ -n "$monthly" ]; then
+              hourly=$(awk "BEGIN { printf \"%.4f\", ${monthly}/730 }")
+              echo "Hourly: **\$${hourly}** | Monthly: **\$${monthly}**"
+              echo
+              echo '<details><summary>Full cost table</summary>'
+              echo
+              echo '```'
+              infracost output --path=/tmp/infracost-gcp.json --format=table || echo "infracost output failed"
+              echo '```'
+              echo
+              echo '</details>'
+            else
+              echo "cost unavailable (no totalMonthlyCost in breakdown output)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run GCP terratest e2e suite
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+        run: |
+          mkdir -p "$E2E_ARTIFACTS_DIR"
+          set -o pipefail
+          go test -tags e2e_gcp -timeout 60m -v ./tests/terratest/ 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-gcp.log"
+
+      - name: Upload e2e diagnostics (GCP)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-diagnostics-gcp-${{ github.run_id }}
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Best-effort safety net: the test's own `defer` is the primary
+      # teardown path; this only guards a panicked/killed test. Needs the
+      # same env values as the apply above to target the right resources.
+      - name: Terraform destroy safety net (GCP)
+        if: always()
+        continue-on-error: true
+        env:
+          TF_VAR_project_id: ${{ env.GOOGLE_PROJECT }}
+          TF_VAR_region: ${{ env.E2E_GCP_REGION }}
+          TF_VAR_zone: ${{ env.E2E_GCP_ZONE }}
+          TF_VAR_cluster_name: ${{ env.E2E_CLUSTER_NAME }}
+          TF_VAR_kubernetes_version: ${{ env.E2E_K8S_VERSION }}
+          TF_VAR_labels: '{}'
+          TF_VAR_scaler_image_repository: ${{ env.E2E_SCALER_IMAGE_REPOSITORY }}
+          TF_VAR_helm_timeout: ${{ env.E2E_HELM_TIMEOUT }}
+        # Re-init the remote backend to the same state prefix the test used, then destroy.
+        run: |
+          terraform -chdir=infra/terraform/gcp init -reconfigure -input=false \
+            -backend-config="bucket=${E2E_GCP_STATE_BUCKET}" \
+            -backend-config="prefix=e2e/gcp/${E2E_CLUSTER_NAME}"
+          terraform -chdir=infra/terraform/gcp destroy -auto-approve
