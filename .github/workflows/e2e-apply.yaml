@@ -1,4 +1,4 @@
-# E2E Cloud Tests
+# E2E Cloud Tests (Apply and Destroy)
 #
 # Provisions REAL cloud GPU infra (AWS EKS / Azure AKS / GCP GKE) via the
 # Terratest suite at tests/terratest/, validates KEDA scaling against actual
@@ -10,7 +10,7 @@
 # SUBSCRIPTION_ID / GCP_E2E_WIF_PROVIDER+GCP_E2E_SERVICE_ACCOUNT secrets).
 #
 # Manual-only (workflow_dispatch): each run bills real GPU hardware.
-name: E2E Cloud Tests
+name: E2E Cloud Tests (Apply and Destroy)
 
 on:
   workflow_dispatch:

@@ -1,13 +1,13 @@
 # Infra Validate
 #
 # Cheap per-PR gate for infra/terraform/{aws,azure,gcp}, complementing the
-# expensive real-GPU suite in e2e-cloud.yaml (workflow_dispatch-only).
+# expensive real-GPU suite in e2e-apply.yaml (workflow_dispatch-only).
 #
 #   - fmt/validate/tflint/checkov: credential-less, BLOCKING on every PR.
 #   - docs: PR-only, single job (avoids racing pushes) that regenerates
 #     terraform-docs and pushes the change back to the PR branch.
 #
-# Cost estimates live with the terraform-plan.yml and e2e-cloud.yaml jobs
+# Cost estimates live with the e2e-plan.yml and e2e-apply.yaml jobs
 # (Infracost in each job summary), not here.
 name: Infra Validate
 

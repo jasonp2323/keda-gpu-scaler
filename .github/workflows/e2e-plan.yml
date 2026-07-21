@@ -1,4 +1,4 @@
-name: Terraform Plan
+name: E2E Plan (Manual)
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +8,7 @@ on:
         options: [aws, azure, gcp]
         required: true
 concurrency:
-  group: terraform-plan-${{ inputs.cloud }}
+  group: e2e-plan-${{ inputs.cloud }}
   cancel-in-progress: false
 permissions:
   contents: read

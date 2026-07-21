@@ -12,8 +12,8 @@ End-to-end setup, once per cloud you want to test. Each step links to its full d
 4. **Create Environments** — `e2e-aws` / `e2e-azure` / `e2e-gcp` under **Settings → Environments**, each with required reviewers (the approval gate for paid apply runs).
 5. **Enable Actions** — forks have Actions disabled by default: open the **Actions** tab and enable them. Optionally add the `INFRACOST_API_KEY` secret for cost estimates.
 6. **Run it:**
-   - Open a PR touching `infra/terraform/**` → the credential-less gates (fmt/validate/tflint/checkov/cost/docs) run automatically — **no cloud connection needed**. Run a `terraform plan` on demand from **Actions → Terraform Plan** (pick the cloud).
-   - Trigger the real GPU apply from **Actions → E2E Cloud Tests → Run workflow** → pick the cloud(s) and type `apply` in the confirm box. To tear down a leftover cluster, use **Actions → E2E Destroy** (pick the cloud, enter the cluster name, type `destroy`). For local runs see [Building & Running Tests](#building--running-tests).
+   - Open a PR touching `infra/terraform/**` → the credential-less gates (fmt/validate/tflint/checkov/docs) run automatically — **no cloud connection needed**. Run a `terraform plan` on demand from **Actions → E2E Plan (Manual)** (pick the cloud).
+   - Trigger the real GPU apply from **Actions → E2E Cloud Tests (Apply and Destroy) → Run workflow** → pick the cloud(s) and type `apply` in the confirm box. To tear down a leftover cluster, use **Actions → E2E Destroy (Manual)** (pick the cloud, enter the cluster name, type `destroy`). For local runs see [Building & Running Tests](#building--running-tests).
 
 ## What the Suite Is
 
@@ -91,12 +91,12 @@ Everything the workflows read, in one place. Add these under **Settings → Secr
 
 | Secret | Used by | Where it comes from |
 |--------|---------|---------------------|
-| `AWS_E2E_ROLE_ARN` | e2e-cloud, plan-aws | `aws/bootstrap` output `role_arn` |
-| `AZURE_E2E_CLIENT_ID` | e2e-cloud, plan-azure | `azure/bootstrap` output `client_id` |
-| `AZURE_E2E_TENANT_ID` | e2e-cloud, plan-azure | `azure/bootstrap` output `tenant_id` |
-| `AZURE_E2E_SUBSCRIPTION_ID` | e2e-cloud, plan-azure | `azure/bootstrap` output `subscription_id` |
-| `GCP_E2E_WIF_PROVIDER` | e2e-cloud, plan-gcp | `gcp/bootstrap` output `wif_provider` |
-| `GCP_E2E_SERVICE_ACCOUNT` | e2e-cloud, plan-gcp | `gcp/bootstrap` output `service_account_email` |
+| `AWS_E2E_ROLE_ARN` | e2e-apply, plan-aws | `aws/bootstrap` output `role_arn` |
+| `AZURE_E2E_CLIENT_ID` | e2e-apply, plan-azure | `azure/bootstrap` output `client_id` |
+| `AZURE_E2E_TENANT_ID` | e2e-apply, plan-azure | `azure/bootstrap` output `tenant_id` |
+| `AZURE_E2E_SUBSCRIPTION_ID` | e2e-apply, plan-azure | `azure/bootstrap` output `subscription_id` |
+| `GCP_E2E_WIF_PROVIDER` | e2e-apply, plan-gcp | `gcp/bootstrap` output `wif_provider` |
+| `GCP_E2E_SERVICE_ACCOUNT` | e2e-apply, plan-gcp | `gcp/bootstrap` output `service_account_email` |
 | `INFRACOST_API_KEY` | infra-validate (cost) | free key from infracost.io — **optional**; cost steps skip without it |
 | `GITHUB_TOKEN` | PR comments, docs push | **auto-provided by GitHub — do not set** |
 
@@ -104,18 +104,18 @@ Everything the workflows read, in one place. Add these under **Settings → Secr
 
 | Variable | Used by | Where it comes from |
 |----------|---------|---------------------|
-| `AWS_E2E_REGION` | e2e-cloud, plan-aws | your target AWS region (match `aws/bootstrap` `region`) |
-| `AWS_E2E_STATE_BUCKET` | e2e-cloud, plan-aws | `aws/bootstrap` output `state_bucket` |
-| `AWS_E2E_STATE_LOCK_TABLE` | e2e-cloud, plan-aws | `aws/bootstrap` output `state_lock_table` |
-| `AZURE_E2E_STATE_RESOURCE_GROUP` | e2e-cloud, plan-azure | `azure/bootstrap` output `state_resource_group` |
-| `AZURE_E2E_STATE_STORAGE_ACCOUNT` | e2e-cloud, plan-azure | `azure/bootstrap` output `state_storage_account` |
-| `AZURE_E2E_STATE_CONTAINER` | e2e-cloud, plan-azure | `azure/bootstrap` output `state_container` (default `tfstate`) |
-| `GCP_E2E_PROJECT` | e2e-cloud, plan-gcp, cost | your GCP project id |
-| `GCP_E2E_STATE_BUCKET` | e2e-cloud, plan-gcp | `gcp/bootstrap` output `state_bucket` |
+| `AWS_E2E_REGION` | e2e-apply, plan-aws | your target AWS region (match `aws/bootstrap` `region`) |
+| `AWS_E2E_STATE_BUCKET` | e2e-apply, plan-aws | `aws/bootstrap` output `state_bucket` |
+| `AWS_E2E_STATE_LOCK_TABLE` | e2e-apply, plan-aws | `aws/bootstrap` output `state_lock_table` |
+| `AZURE_E2E_STATE_RESOURCE_GROUP` | e2e-apply, plan-azure | `azure/bootstrap` output `state_resource_group` |
+| `AZURE_E2E_STATE_STORAGE_ACCOUNT` | e2e-apply, plan-azure | `azure/bootstrap` output `state_storage_account` |
+| `AZURE_E2E_STATE_CONTAINER` | e2e-apply, plan-azure | `azure/bootstrap` output `state_container` (default `tfstate`) |
+| `GCP_E2E_PROJECT` | e2e-apply, plan-gcp | your GCP project id |
+| `GCP_E2E_STATE_BUCKET` | e2e-apply, plan-gcp | `gcp/bootstrap` output `state_bucket` |
 
 ### Environments
 
-Create `e2e-aws`, `e2e-azure`, `e2e-gcp` under **Settings → Environments**, each with required reviewers — the approval gate for the paid apply jobs in `e2e-cloud.yaml`. Only the `plan-*`, `cost`, and e2e apply/destroy jobs consume any of the above; the credential-less jobs (`fmt`/`validate`/`tflint`/`checkov`/`docs`) need none of it.
+Create `e2e-aws`, `e2e-azure`, `e2e-gcp` under **Settings → Environments**, each with required reviewers — the approval gate for the paid apply jobs in `e2e-apply.yaml`. Only the `plan-*` and e2e apply/destroy jobs consume any of the above; the credential-less jobs (`fmt`/`validate`/`tflint`/`checkov`/`docs`) need none of it.
 
 ## Configuration (Environment Variables)
 
@@ -167,16 +167,16 @@ terraform destroy
 
 ## CI Workflow
 
-**`e2e-cloud.yaml`** — the apply-level suite:
-- **Trigger:** manual `workflow_dispatch` — pick cloud(s), type `apply` to confirm. A run self-destroys when it finishes; use **E2E Destroy** for a cluster that leaked past that.
+**`e2e-apply.yaml`** — the apply-level suite:
+- **Trigger:** manual `workflow_dispatch` — pick cloud(s), type `apply` to confirm. A run self-destroys when it finishes; use **E2E Destroy (Manual)** for a cluster that leaked past that.
 - **Auth:** OIDC/federated cloud auth — no long-lived keys stored. See [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup).
 - **Approval:** gated per-cloud by a GitHub Environment — see [Who can deploy](#who-can-deploy--how-its-gated) for what that does and doesn't guarantee.
 - **Diagnostics:** on failure the test dumps scaler pod logs, node status, `demo-app`/ScaledObject describe, and recent events (to `E2E_ARTIFACTS_DIR`); the job uploads those plus the full `go test` log as a build artifact (`if: always()`), so a failed run is debuggable after the fact.
 - **Scope:** not run on every PR/push, matching the repo's "infra CI is manual only" stance.
 
 **Related workflows:**
-- **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`, fully credential-less: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking); an Infracost `cost` estimate per cloud (needs only `INFRACOST_API_KEY`); a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
-- **`terraform-plan.yml`** — manual `workflow_dispatch` (pick a cloud) that runs `terraform plan` with OIDC and saves the plan as an artifact + tf-summarize digest + job summary. Moved out of the PR pipeline so PRs never require cloud connectivity; runs in the `e2e-<cloud>` Environment (same OIDC subject as apply/destroy).
+- **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`, fully credential-less: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking); a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
+- **`e2e-plan.yml`** — manual `workflow_dispatch` (pick a cloud) that runs `terraform plan` with OIDC and saves the plan as an artifact + tf-summarize digest + job summary. Moved out of the PR pipeline so PRs never require cloud connectivity; runs in the `e2e-<cloud>` Environment (same OIDC subject as apply/destroy).
 
 ## Who can deploy / how it's gated
 
@@ -198,7 +198,7 @@ The workflows always declare `environment: e2e-<cloud>` (needed for the OIDC sub
 
 CI never stores long-lived cloud keys. Instead, GitHub Actions mints a short-lived OIDC token per job and exchanges it for temporary cloud credentials (AWS `AssumeRoleWithWebIdentity`, Azure federated credential, GCP Workload Identity Federation). This section is the one-time setup a maintainer runs per cloud account.
 
-Three workflows consume these credentials, and **all run in a GitHub Environment** (`e2e-aws` / `e2e-azure` / `e2e-gcp`): `.github/workflows/e2e-cloud.yaml` (the e2e apply job), `.github/workflows/terraform-plan.yml` (the manual `plan-*` jobs), and `.github/workflows/destroy.yaml` (the manual destroy jobs). Because all three run in the Environment, they present the **same** OIDC subject: `repo:<repo>:environment:e2e-<cloud>`. (The bootstrap also emits a `pull_request` subject — a leftover from when plan ran on PRs; it's now unused by any workflow. Harmless to leave; drop it for tighter least-privilege.)
+Three workflows consume these credentials, and **all run in a GitHub Environment** (`e2e-aws` / `e2e-azure` / `e2e-gcp`): `.github/workflows/e2e-apply.yaml` (the e2e apply job), `.github/workflows/e2e-plan.yml` (the manual `plan-*` jobs), and `.github/workflows/e2e-destroy.yaml` (the manual destroy jobs). Because all three run in the Environment, they present the **same** OIDC subject: `repo:<repo>:environment:e2e-<cloud>`. (The bootstrap also emits a `pull_request` subject — a leftover from when plan ran on PRs; it's now unused by any workflow. Harmless to leave; drop it for tighter least-privilege.)
 
 ### AWS
 
@@ -487,7 +487,7 @@ Three workflows consume these credentials, and **all run in a GitHub Environment
 - Add all secrets/variables above under **Settings → Secrets and variables → Actions** (secrets for credentials, variables for the non-secret region/project values).
 - Create the `e2e-aws` / `e2e-azure` / `e2e-gcp` [Environments](#environments) — they supply the OIDC subject the trust policy expects, and, on a **public repo or GitHub Enterprise**, enforce required-reviewer approval before a run proceeds. See [Who can deploy](#who-can-deploy--how-its-gated) for what applies on a private repo below Enterprise.
 - The credential-less gates (`fmt`, `validate`, `tflint`, `checkov`) need none of this setup — only the `plan-*` jobs and the e2e apply/destroy jobs authenticate to a cloud.
-- **Infracost (optional):** the `cost` job needs the `INFRACOST_API_KEY` secret (free key from infracost.io). Without it the cost steps skip and the rest of the pipeline is unaffected.
+- **Infracost (optional):** the plan and apply jobs' Infracost step needs the `INFRACOST_API_KEY` secret (free key from infracost.io). Without it the cost step skips and the rest of the pipeline is unaffected.
 
 ### Reusing existing OIDC resources
 
