@@ -1,26 +1,15 @@
 # E2E Cloud Tests
 #
-# Provisions REAL cloud GPU infrastructure (AWS EKS / Azure AKS / GCP GKE) via
-# the Terratest suite at tests/terratest/, asserts KEDA/keda-gpu-scaler scaling
-# against actual NVIDIA hardware, then tears it down. This COSTS REAL MONEY —
-# ballpark ~$0.55-1/hr per cloud per run (see infra/terraform/README.md's cost
-# warning banner for current per-cloud figures). Bring the infra up, run the
-# tests, destroy everything — this workflow's job steps do both automatically,
-# but read the cost warning before running it.
+# Provisions REAL cloud GPU infra (AWS EKS / Azure AKS / GCP GKE) via the
+# Terratest suite at tests/terratest/, validates KEDA scaling against actual
+# NVIDIA hardware, then tears it down. COSTS REAL MONEY — ~$0.55-1/hr per
+# cloud (see infra/terraform/README.md's cost banner).
 #
-# Prerequisites, per cloud, before this workflow can succeed:
-#   - GPU service quota already granted (fresh accounts default to 0 GPU
-#     quota) — see the quota section at the top of infra/terraform/README.md.
-#   - OIDC federation configured so GitHub Actions can assume a cloud identity
-#     with no long-lived secret: an AWS IAM role trusting the GitHub OIDC
-#     provider (secrets.AWS_E2E_ROLE_ARN), an Azure AD app federated credential
-#     (secrets.AZURE_E2E_CLIENT_ID/TENANT_ID/SUBSCRIPTION_ID), and a GCP
-#     Workload Identity Federation provider + service account
-#     (secrets.GCP_E2E_WIF_PROVIDER/GCP_E2E_SERVICE_ACCOUNT).
+# Prerequisites per cloud: GPU service quota granted (default is 0), and
+# OIDC federation set up (AWS_E2E_ROLE_ARN / AZURE_E2E_CLIENT_ID+TENANT_ID+
+# SUBSCRIPTION_ID / GCP_E2E_WIF_PROVIDER+GCP_E2E_SERVICE_ACCOUNT secrets).
 #
-# This is intentionally manual-only (workflow_dispatch), not wired to every
-# PR/push — each run bills real GPU hardware, matching infra/terraform/README.md's
-# "CI is manual only" convention for `terraform apply` itself.
+# Manual-only (workflow_dispatch): each run bills real GPU hardware.
 name: E2E Cloud Tests
 
 on:
@@ -40,17 +29,13 @@ on:
         description: "Type 'apply' to confirm you understand this provisions billed GPU hardware"
         type: string
         required: true
-  # Uncomment below to also run nightly. Caveat: a scheduled event has no
-  # `inputs.confirm_cost` to check, so the cost-confirmation gate below would
-  # need to be bypassed or reworked for schedule-triggered runs (e.g. gate on
-  # `github.event_name == 'schedule'` in addition to the confirm_cost check) —
-  # not solved here, left as a caveat for whoever enables this.
+  # Uncomment to also run nightly — a scheduled event has no
+  # inputs.confirm_cost, so the gate below would need reworking first.
   # schedule:
   #   - cron: '0 6 * * *'
 
 concurrency:
-  # Keyed on workflow + cloud input so overlapping expensive runs queue
-  # instead of racing each other against the same cloud account.
+  # Keyed on workflow+cloud so overlapping expensive runs queue, not race.
   group: ${{ github.workflow }}-${{ inputs.clouds }}
   cancel-in-progress: false
 
@@ -62,16 +47,14 @@ jobs:
     if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'aws' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest
-    # Requires a GitHub Environment named "e2e-aws" — a repo admin should add
-    # required reviewers to it so cloud spend needs human approval per run.
+    # Environment "e2e-aws" — add required reviewers so spend needs approval.
     environment: e2e-aws
     permissions:
       contents: read
       id-token: write
     env:
-      # Defined once here; both the go-test step and the teardown-safety step
-      # below read these same values, so teardown targets the exact cluster
-      # the test created.
+      # Shared with the teardown safety-net step below so it targets the
+      # exact cluster the test created.
       AWS_REGION: ${{ vars.AWS_E2E_REGION }}
       E2E_CLUSTER_NAME: keda-gpu-e2e-${{ github.run_id }}
       E2E_K8S_VERSION: '1.33'
@@ -121,11 +104,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # Best-effort teardown safety net: the test's own `defer` is the PRIMARY
-      # teardown path. This step only guards against the Go test panicking or
-      # being killed before that defer runs. It needs the exact same variable
-      # values as the apply (from the job-level env above) or it can't
-      # correctly target/destroy the right resources.
+      # Best-effort safety net: the test's own `defer` is the primary
+      # teardown path; this only guards a panicked/killed test. Needs the
+      # same env values as the apply above to target the right resources.
       - name: Terraform destroy safety net (AWS)
         if: always()
         continue-on-error: true
@@ -152,16 +133,14 @@ jobs:
     if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'azure' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest
-    # Requires a GitHub Environment named "e2e-azure" — a repo admin should add
-    # required reviewers to it so cloud spend needs human approval per run.
+    # Environment "e2e-azure" — add required reviewers so spend needs approval.
     environment: e2e-azure
     permissions:
       contents: read
       id-token: write
     env:
-      # Defined once here; both the go-test step and the teardown-safety step
-      # below read these same values, so teardown targets the exact cluster
-      # the test created.
+      # Shared with the teardown safety-net step below so it targets the
+      # exact cluster the test created.
       E2E_AZURE_LOCATION: eastus
       E2E_AZURE_RESOURCE_GROUP: keda-gpu-e2e-${{ github.run_id }}-rg
       E2E_CLUSTER_NAME: keda-gpu-e2e-${{ github.run_id }}
@@ -212,11 +191,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # Best-effort teardown safety net: the test's own `defer` is the PRIMARY
-      # teardown path. This step only guards against the Go test panicking or
-      # being killed before that defer runs. It needs the exact same variable
-      # values as the apply (from the job-level env above) or it can't
-      # correctly target/destroy the right resources.
+      # Best-effort safety net: the test's own `defer` is the primary
+      # teardown path; this only guards a panicked/killed test. Needs the
+      # same env values as the apply above to target the right resources.
       - name: Terraform destroy safety net (Azure)
         if: always()
         continue-on-error: true
@@ -238,16 +215,14 @@ jobs:
     if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'gcp' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest
-    # Requires a GitHub Environment named "e2e-gcp" — a repo admin should add
-    # required reviewers to it so cloud spend needs human approval per run.
+    # Environment "e2e-gcp" — add required reviewers so spend needs approval.
     environment: e2e-gcp
     permissions:
       contents: read
       id-token: write
     env:
-      # Defined once here; both the go-test step and the teardown-safety step
-      # below read these same values, so teardown targets the exact cluster
-      # the test created.
+      # Shared with the teardown safety-net step below so it targets the
+      # exact cluster the test created.
       GOOGLE_PROJECT: ${{ vars.GCP_E2E_PROJECT }}
       E2E_GCP_REGION: us-central1
       E2E_GCP_ZONE: us-central1-a
@@ -296,11 +271,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # Best-effort teardown safety net: the test's own `defer` is the PRIMARY
-      # teardown path. This step only guards against the Go test panicking or
-      # being killed before that defer runs. It needs the exact same variable
-      # values as the apply (from the job-level env above) or it can't
-      # correctly target/destroy the right resources.
+      # Best-effort safety net: the test's own `defer` is the primary
+      # teardown path; this only guards a panicked/killed test. Needs the
+      # same env values as the apply above to target the right resources.
       - name: Terraform destroy safety net (GCP)
         if: always()
         continue-on-error: true

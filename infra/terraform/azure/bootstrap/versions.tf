@@ -1,6 +1,5 @@
 terraform {
-  # Floor pinned to the current latest Terraform minor (1.15.x). The exact
-  # patch contributors/CI should use is pinned in .terraform-version.
+  # Floor pinned to current latest minor (1.15.x); exact patch pinned in .terraform-version.
   required_version = ">= 1.15.0"
 
   required_providers {

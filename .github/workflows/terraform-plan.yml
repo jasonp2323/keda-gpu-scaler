@@ -14,14 +14,10 @@ permissions:
   contents: read
 
 jobs:
-  # Manual, single-cloud terraform plan. Unlike the advisory PR plan jobs,
-  # this runs in the e2e-<cloud> environment so the OIDC subject presented
-  # to AWS/Azure/GCP is `repo:OWNER/REPO:environment:e2e-<cloud>` (matching
-  # the bootstrap trust policy) rather than a ref-based subject, which the
-  # trust policy does not allow for workflow_dispatch runs. Init/plan
-  # failures are surfaced directly (no job-level continue-on-error); the
-  # plan step itself still exits 0 so the diagnostic/upload steps below
-  # always run via `if: always()`.
+  # Manual single-cloud plan; runs in the e2e-<cloud> environment so the
+  # OIDC subject matches the bootstrap trust policy (environment-based, not
+  # ref-based). The plan step itself exits 0 so diagnostic/upload steps
+  # below still run via `if: always()`.
   plan-aws:
     if: inputs.cloud == 'aws'
     name: terraform plan (aws)
@@ -31,9 +27,8 @@ jobs:
       contents: read
       id-token: write
     env:
-      # Placeholders for the variables in infra/terraform/aws/variables.tf
-      # that have no default, so init/plan never blocks on interactive var
-      # input. Values follow infra/terraform/aws/terraform.tfvars.example.
+      # Placeholders for required (no-default) vars so init/plan never
+      # blocks on interactive input; follows terraform.tfvars.example.
       TF_VAR_region: us-east-2
       TF_VAR_cluster_name: keda-gpu-scaler-ci-plan
       TF_VAR_kubernetes_version: '1.33'
@@ -60,8 +55,7 @@ jobs:
         env:
           TF_LOG: DEBUG
           TF_LOG_PATH: ${{ github.workspace }}/tf-diag-aws-init.log
-        # Partial backend now requires config at init. Use a plan-specific state
-        # key so advisory plans never touch the e2e run state.
+        # Plan-specific state key so advisory plans never touch e2e run state.
         run: |
           terraform -chdir=infra/terraform/aws init -input=false \
             -backend-config="bucket=${{ vars.AWS_E2E_STATE_BUCKET }}" \
@@ -196,16 +190,14 @@ jobs:
           tenant-id: ${{ secrets.AZURE_E2E_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
 
-      # No TF_VAR_* needed: every variable in
-      # infra/terraform/azure/variables.tf has a default. subscription_id
-      # defaults to null and is instead resolved from ARM_SUBSCRIPTION_ID.
+      # No TF_VAR_* needed — all azure vars have defaults; subscription_id
+      # resolves from ARM_SUBSCRIPTION_ID instead.
       - name: terraform init
         env:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_E2E_SUBSCRIPTION_ID }}
           TF_LOG: DEBUG
           TF_LOG_PATH: ${{ github.workspace }}/tf-diag-azure-init.log
-        # Partial backend now requires config at init. Use a plan-specific state
-        # key so advisory plans never touch the e2e run state.
+        # Plan-specific state key so advisory plans never touch e2e run state.
         run: |
           terraform -chdir=infra/terraform/azure init -input=false \
             -backend-config="resource_group_name=${{ vars.AZURE_E2E_STATE_RESOURCE_GROUP }}" \
@@ -326,9 +318,8 @@ jobs:
       contents: read
       id-token: write
     env:
-      # Placeholders for the variables in infra/terraform/gcp/variables.tf
-      # that have no default, so init/plan never blocks on interactive var
-      # input. Values follow infra/terraform/gcp/terraform.tfvars.example.
+      # Placeholders for required (no-default) vars so init/plan never
+      # blocks on interactive input; follows terraform.tfvars.example.
       TF_VAR_project_id: ${{ vars.GCP_E2E_PROJECT }}
       TF_VAR_region: us-central1
       TF_VAR_zone: us-central1-a
@@ -355,8 +346,7 @@ jobs:
         env:
           TF_LOG: DEBUG
           TF_LOG_PATH: ${{ github.workspace }}/tf-diag-gcp-init.log
-        # Partial backend now requires config at init. Use a plan-specific state
-        # prefix so advisory plans never touch the e2e run state.
+        # Plan-specific state prefix so advisory plans never touch e2e run state.
         run: |
           terraform -chdir=infra/terraform/gcp init -input=false \
             -backend-config="bucket=${{ vars.GCP_E2E_STATE_BUCKET }}" \

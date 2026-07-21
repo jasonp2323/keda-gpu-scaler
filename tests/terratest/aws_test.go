@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// TestAWSGPUScalerE2E applies infra/terraform/aws (EKS + GPU node + gpu-operator + KEDA + keda-gpu-scaler + e2e
-// fixtures), asserts idle/scale-up/scale-down, then destroys. Real AWS cost — see README.md before running.
+// TestAWSGPUScalerE2E applies infra/terraform/aws (EKS + GPU + KEDA + keda-gpu-scaler + e2e fixtures), asserts idle/scale-up/scale-down, then destroys. Real AWS cost — see README.md.
 func TestAWSGPUScalerE2E(t *testing.T) {
 	terraformDir, err := filepath.Abs("../../infra/terraform/aws")
 	if err != nil {

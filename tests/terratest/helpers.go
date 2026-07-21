@@ -83,9 +83,7 @@ func runGPUScalerE2E(cfg gpuScalerE2E) {
 	assertReplicas(t, demoOpts, demoIdleReplicas, scaleDownWait)
 }
 
-// collectDiagnostics dumps cluster state to the test log — and to E2E_ARTIFACTS_DIR if set — when the
-// test has failed. Deferred before terraform.Destroy so the cluster still exists. Best-effort: it uses the
-// error-returning kubectl variant and never fails the test itself.
+// collectDiagnostics dumps cluster state on failure (log + E2E_ARTIFACTS_DIR); deferred before Destroy so the cluster still exists. Best-effort, never fails the test.
 func collectDiagnostics(cfg gpuScalerE2E, scalerOpts, demoOpts *k8s.KubectlOptions) {
 	t := cfg.t
 	if !t.Failed() {
@@ -133,8 +131,7 @@ func collectDiagnostics(cfg gpuScalerE2E, scalerOpts, demoOpts *k8s.KubectlOptio
 	}
 }
 
-// writeKubeconfig runs the stack's `configure_kubectl` output command against a fresh temp kubeconfig and
-// returns its path. All three clouds' CLIs (aws, az, gcloud) honor the KUBECONFIG env var.
+// writeKubeconfig runs configure_kubectl against a fresh temp kubeconfig and returns its path (all three clouds' CLIs honor KUBECONFIG).
 func writeKubeconfig(t *testing.T, configureCmd string) string {
 	t.Helper()
 

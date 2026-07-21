@@ -1,10 +1,4 @@
-###############################################################################
-# Remote state storage — resource group + storage account + container
-#
-# This is what the main stack's `backend.tf` (azurerm backend, partial config)
-# points at via `-backend-config`. Created here with LOCAL state because the
-# storage account doesn't exist yet — chicken-and-egg with a remote backend.
-###############################################################################
+# Remote state storage — resource group + storage account + container. What the main stack's backend.tf points at; created with local state (chicken-and-egg).
 
 resource "azurerm_resource_group" "state" {
   name     = var.state_resource_group_name
@@ -27,8 +21,7 @@ resource "azurerm_storage_account" "state" {
   account_replication_type = "LRS"
   min_tls_version          = "TLS1_2"
 
-  # No anonymous/public blob access — state is only readable via an
-  # authenticated ARM/OIDC identity.
+  # No anonymous/public blob access — state only readable via authenticated ARM/OIDC identity.
   allow_nested_items_to_be_public = false
 
   blob_properties {

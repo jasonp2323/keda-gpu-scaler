@@ -1,19 +1,15 @@
-# GCS bucket that holds the main stack's remote Terraform state
-# (infra/terraform/gcp/backend.tf points at this bucket via -backend-config).
+# GCS bucket that holds the main stack's remote Terraform state (infra/terraform/gcp/backend.tf points here via -backend-config).
 resource "google_storage_bucket" "state" {
   name     = var.state_bucket_name
   location = var.region
   project  = var.project_id
 
-  # Object versioning is how a botched `terraform apply` state write gets
-  # recovered — GCS backend does not use state locking + versioning the way
-  # S3 does, so this is the safety net.
+  # Versioning is the recovery path for a botched state write — GCS backend doesn't lock+version like S3 does.
   versioning {
     enabled = true
   }
 
-  # IAM-only access control (no legacy bucket ACLs) and no public access,
-  # ever — this bucket holds Terraform state, which can contain secrets.
+  # IAM-only access, no public access ever — this bucket can hold secrets in state.
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
 }

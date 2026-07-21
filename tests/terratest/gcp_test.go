@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// TestGCPGPUScalerE2E applies infra/terraform/gcp (GKE + GPU node + gpu-operator + KEDA + keda-gpu-scaler + e2e
-// fixtures), asserts idle/scale-up/scale-down, then destroys. Real GCP cost — see README.md before running.
+// TestGCPGPUScalerE2E applies infra/terraform/gcp (GKE + GPU + KEDA + keda-gpu-scaler + e2e fixtures), asserts idle/scale-up/scale-down, then destroys. Real GCP cost — see README.md.
 func TestGCPGPUScalerE2E(t *testing.T) {
 	projectID := envOrDefault("E2E_GCP_PROJECT", os.Getenv("GOOGLE_PROJECT"))
 	if projectID == "" {

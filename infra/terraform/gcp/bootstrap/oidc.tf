@@ -1,5 +1,4 @@
-# GitHub Actions OIDC -> GCP Workload Identity Federation, so CI never stores
-# a long-lived service account key. Mirrors tests/terratest/README.md ("### GCP").
+# GitHub Actions OIDC -> GCP Workload Identity Federation (no long-lived SA key). Mirrors tests/terratest/README.md ("### GCP").
 
 resource "google_iam_workload_identity_pool" "github" {
   count                     = var.create_workload_identity_pool ? 1 : 0
@@ -22,8 +21,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
     "attribute.repository" = "assertion.repository"
   }
 
-  # Scopes the provider to this repo only — without this, any GitHub repo's
-  # OIDC token could satisfy the pool.
+  # Scopes the provider to this repo only — otherwise any GitHub repo's OIDC token would satisfy the pool.
   attribute_condition = "assertion.repository == '${var.github_repository}'"
 
   oidc {
@@ -31,10 +29,7 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 }
 
-# Reference case: var.create_workload_identity_pool = false looks up an
-# already-existing pool/provider by id instead of creating one (e.g. when it
-# already exists, or GCP is still soft-deleting a same-id pool from <30 days
-# ago).
+# When the toggle is false, looks up an existing pool/provider by id instead of creating one (e.g. GCP still soft-deleting a same-id pool from <30 days ago).
 data "google_iam_workload_identity_pool" "github" {
   count                     = var.create_workload_identity_pool ? 0 : 1
   project                   = var.project_id
@@ -53,8 +48,7 @@ locals {
   wif_provider_name = var.create_workload_identity_pool ? google_iam_workload_identity_pool_provider.github[0].name : data.google_iam_workload_identity_pool_provider.github[0].name
 }
 
-# Service account CI impersonates to run `terraform apply`/`destroy` against
-# the main GKE stack.
+# Service account CI impersonates to run `terraform apply`/`destroy` against the main GKE stack.
 resource "google_service_account" "e2e" {
   project      = var.project_id
   account_id   = var.service_account_id
@@ -62,8 +56,7 @@ resource "google_service_account" "e2e" {
   description  = "Impersonated by GitHub Actions (via WIF) to provision/destroy the e2e GKE test cluster."
 }
 
-# Scoped to exactly what the main stack provisions (see tests/terratest/README.md
-# "### GCP" for the rationale) — no project-wide compute.admin or owner role.
+# Scoped to exactly what the main stack provisions (see tests/terratest/README.md "### GCP") — no project-wide compute.admin or owner role.
 resource "google_project_iam_member" "e2e_container_admin" {
   project = var.project_id
   role    = "roles/container.admin"
@@ -82,16 +75,14 @@ resource "google_project_iam_member" "e2e_service_account_user" {
   member  = "serviceAccount:${google_service_account.e2e.email}"
 }
 
-# Bucket-scoped (not project-wide) so the SA can read/write the remote
-# Terraform state object without a broader storage grant.
+# Bucket-scoped (not project-wide) so the SA can read/write state without a broader storage grant.
 resource "google_storage_bucket_iam_member" "e2e_state_bucket" {
   bucket = google_storage_bucket.state.name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.e2e.email}"
 }
 
-# Lets GitHub Actions workflows running in var.github_repository impersonate
-# the service account above via the WIF provider (no service account key).
+# Lets GitHub Actions workflows in var.github_repository impersonate the SA above via WIF (no service account key).
 resource "google_service_account_iam_member" "e2e_wif_binding" {
   service_account_id = google_service_account.e2e.name
   role               = "roles/iam.workloadIdentityUser"

@@ -1,10 +1,4 @@
-###############################################################################
-# GitHub Actions OIDC provider + deployer role
-#
-# Mirrors the setup in tests/terratest/README.md (### AWS): a federated role
-# that e2e-cloud.yaml (Environment `e2e-aws`) and infra-validate.yaml's
-# plan-aws job (no Environment, `pull_request` subject) both assume.
-###############################################################################
+# GitHub Actions OIDC provider + deployer role — mirrors tests/terratest/README.md (### AWS).
 
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.create_github_oidc_provider ? 1 : 0
@@ -14,8 +8,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
 }
 
-# Looked up instead of created when var.create_github_oidc_provider is false,
-# since only one GitHub OIDC provider is allowed per AWS account.
+# Looked up instead of created when the toggle is false — only one OIDC provider is allowed per AWS account.
 data "aws_iam_openid_connect_provider" "github" {
   count = var.create_github_oidc_provider ? 0 : 1
 
@@ -28,17 +21,13 @@ locals {
   github_owner = split("/", var.github_repository)[0]
   github_repo  = split("/", var.github_repository)[1]
 
-  # Repo slugs accepted in the OIDC `sub`: always the classic OWNER/REPO, plus —
-  # when the numeric IDs are supplied — the immutable OWNER@OWNER_ID/REPO@REPO_ID
-  # slug GitHub embeds for repos created after 2026-07-15. Accepting both keeps
-  # AssumeRoleWithWebIdentity working across the classic and immutable formats.
+  # Repo slugs accepted in `sub`: classic OWNER/REPO, plus immutable OWNER@OWNER_ID/REPO@REPO_ID for repos created after 2026-07-15 (when IDs are supplied).
   github_repo_slugs = compact([
     var.github_repository,
     var.github_owner_id != "" && var.github_repo_id != "" ? "${local.github_owner}@${var.github_owner_id}/${local.github_repo}@${var.github_repo_id}" : "",
   ])
 
-  # Still scoped to specific workflows (one subject per Environment + the
-  # pull_request plan job), not a broad `:*`, for each accepted slug.
+  # Scoped per workflow (one subject per Environment + pull_request), not a broad `:*`.
   oidc_subject_suffixes = concat(
     [for env in var.environments : "environment:${env}"],
     ["pull_request"],
@@ -79,9 +68,7 @@ resource "aws_iam_role" "deployer" {
   assume_role_policy = data.aws_iam_policy_document.deployer_trust.json
 }
 
-# Scoped deployer permissions - the exact 6-statement policy from
-# tests/terratest/README.md's deployer-policy.json, plus backend-access
-# statements so the role can also read/write the state bucket and lock table.
+# Deployer permissions: the 6-statement policy from tests/terratest/README.md's deployer-policy.json, plus backend access to the state bucket/lock table.
 data "aws_iam_policy_document" "deployer" {
   statement {
     sid    = "NetworkingAndCompute"
@@ -186,10 +173,7 @@ data "aws_iam_policy_document" "deployer" {
     resources = ["*"]
   }
 
-  # Backend access: lets the role read/write the main stack's remote state
-  # and take/release the lock during `plan`/`apply`. Scoped to the two
-  # resources this config creates, unlike the statements above (whose
-  # underlying resources don't exist until the main stack applies).
+  # Backend access: read/write main stack's remote state + lock during plan/apply. Scoped to these two resources, unlike the statements above (whose resources don't exist until the main stack applies).
   statement {
     sid    = "TerraformStateBackend"
     effect = "Allow"

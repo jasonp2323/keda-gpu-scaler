@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// TestAzureGPUScalerE2E applies infra/terraform/azure (AKS + GPU node + gpu-operator + KEDA + keda-gpu-scaler + e2e
-// fixtures), asserts idle/scale-up/scale-down, then destroys. Real Azure cost — see README.md before running.
-// Requires ARM_SUBSCRIPTION_ID (and standard ARM_* auth env vars) — Terraform reads them directly.
+// TestAzureGPUScalerE2E applies infra/terraform/azure (AKS + GPU + KEDA + keda-gpu-scaler + e2e fixtures), asserts idle/scale-up/scale-down, then destroys. Real Azure cost — see README.md.
+// Requires ARM_SUBSCRIPTION_ID (and ARM_* auth env vars) — Terraform reads them directly.
 func TestAzureGPUScalerE2E(t *testing.T) {
 	if os.Getenv("ARM_SUBSCRIPTION_ID") == "" {
 		t.Fatal("ARM_SUBSCRIPTION_ID must be set for the Azure e2e suite")
@@ -24,8 +23,7 @@ func TestAzureGPUScalerE2E(t *testing.T) {
 	// E2E_CLUSTER_NAME is the full name (CI makes it unique per run); local runs get a suffixed default.
 	clusterName := envOrDefault("E2E_CLUSTER_NAME", "keda-gpu-scaler-e2e-"+clusterSuffix())
 
-	// Remote azurerm backend (created by infra/terraform/azure/bootstrap); state key is unique per cluster.
-	// Note: the STATE resource group (E2E_AZURE_STATE_*) is distinct from the cluster's own resource group.
+	// Remote azurerm backend (from bootstrap); state key is unique per cluster. STATE resource group differs from the cluster's own RG.
 	stateSA := envOrDefault("E2E_AZURE_STATE_STORAGE_ACCOUNT", "")
 	stateRG := envOrDefault("E2E_AZURE_STATE_RESOURCE_GROUP", "")
 	if stateSA == "" || stateRG == "" {

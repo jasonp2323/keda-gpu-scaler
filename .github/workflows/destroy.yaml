@@ -1,20 +1,12 @@
 # E2E Destroy
 #
-# Manual "destroy button" for a leaked/leftover e2e GPU cluster. A normal e2e
-# run (e2e-cloud.yaml) already self-destroys — the Terratest suite defers
-# `terraform destroy` and each job has an always() teardown safety net. This
-# workflow is the manual valve for the rare case a cluster survives both (killed
-# runner, backend hiccup), since the scheduled janitor was removed.
+# Manual "destroy button" for a leaked e2e cluster (e2e-cloud.yaml already
+# self-destroys via defer + safety net; this covers the rare survivor).
+# Re-inits the backend to e2e/<cloud>/<cluster> and destroys it — supply
+# the exact cluster name (Project=keda-gpu-scaler tag, or the state bucket).
 #
-# It re-inits the remote backend to the run's state key (e2e/<cloud>/<cluster>)
-# and runs `terraform destroy`, so you must supply the exact cluster name — find
-# it from the `Project=keda-gpu-scaler` tag/label in the cloud console or from
-# the state bucket.
-#
-# Gating (Option A): workflow_dispatch is triggerable only by users with write
-# access, and you must type `destroy` to confirm. The `environment:` block is
-# what supplies the OIDC subject the bootstrap trust policy expects; on a public
-# repo or GitHub Enterprise it additionally enforces required-reviewer approval.
+# Gated by write access + typing `destroy`; `environment:` supplies the
+# OIDC subject the trust policy expects, plus reviewer approval where set.
 name: E2E Destroy
 
 on:

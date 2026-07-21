@@ -1,6 +1,4 @@
-###############################################################################
 # Azure
-###############################################################################
 
 variable "subscription_id" {
   description = "Azure subscription ID to bootstrap. Leave null to use the ARM_SUBSCRIPTION_ID environment variable."
@@ -14,9 +12,7 @@ variable "location" {
   default     = "eastus"
 }
 
-###############################################################################
 # GitHub OIDC
-###############################################################################
 
 variable "github_repository" {
   description = "GitHub repository (owner/name) allowed to federate via OIDC."
@@ -54,9 +50,7 @@ variable "environments" {
   default     = ["e2e-azure"]
 }
 
-###############################################################################
 # Remote state backend
-###############################################################################
 
 variable "state_resource_group_name" {
   description = "Resource group created to hold the Terraform remote-state storage account."

@@ -9,8 +9,5 @@ terraform {
     }
   }
 
-  # Deliberately NO `backend` block — this config creates the GCS state bucket
-  # the main stack backs onto, so it must run with local state itself
-  # (chicken-and-egg). Run once per GCP project; do not add a remote backend
-  # here.
+  # Deliberately no backend block: creates the GCS bucket the main stack backs onto, so it stays on local state (chicken-and-egg). Run once per GCP project.
 }

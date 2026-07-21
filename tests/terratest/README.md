@@ -1,6 +1,6 @@
 # Terratest E2E Suite: Real GPU Scaling Validation
 
-This is the **Tier-3 end-to-end test suite** for KEDA GPU Scaler. It runs REAL `terraform apply` against live cloud infrastructure and asserts autoscaling behaviour on actual NVIDIA hardware.
+The **Tier-3 end-to-end test suite** for KEDA GPU Scaler: runs real `terraform apply` against live cloud infrastructure and asserts autoscaling behaviour on actual NVIDIA hardware.
 
 ## Quickstart
 
@@ -17,11 +17,9 @@ End-to-end setup, once per cloud you want to test. Each step links to its full d
 
 ## What the Suite Is
 
-**Location:** `tests/terratest/` — a separate Go module (`github.com/pmady/keda-gpu-scaler/tests/terratest`), isolated from the repo's root module so Terratest's large dependency tree stays out of the lean CGO/NVML scaler build.
+**Location:** `tests/terratest/` — a separate Go module (`github.com/pmady/keda-gpu-scaler/tests/terratest`), isolated from the root module so Terratest's large dependency tree stays out of the lean CGO/NVML scaler build.
 
-**Scope:** Provisions a real GPU Kubernetes cluster (EKS/AKS/GKE) with the NVIDIA GPU operator, KEDA, and keda-gpu-scaler, then asserts autoscaling on actual NVIDIA hardware, then destroys all infrastructure.
-
-This is the automated version of the manual validation checklist in `infra/AGENTS.md`.
+**Scope:** Provisions a real GPU Kubernetes cluster (EKS/AKS/GKE) with the NVIDIA GPU operator, KEDA, and keda-gpu-scaler, asserts autoscaling on actual NVIDIA hardware, then destroys all infrastructure. This is the automated version of the manual validation checklist in `infra/AGENTS.md`.
 
 ## E2E Test Flow
 
@@ -64,12 +62,9 @@ make test-terratest-gcp
 
 - **Go 1.25+**
 - **Terraform 1.15.6** (pinned by each stack's `.terraform-version` file)
-- **Cloud CLI** on `PATH`:
-  - AWS: `aws`
-  - Azure: `az`
-  - GCP: `gcloud` + `gke-gcloud-auth-plugin`
+- **Cloud CLI** on `PATH`: AWS `aws`, Azure `az`, GCP `gcloud` + `gke-gcloud-auth-plugin`
 - **Cloud credentials** with permissions to create clusters, networking, and node pools.
-- **GPU service quota** — typically zero on fresh accounts, per-region and per-GPU-family. **Request an increase BEFORE running or provisioning fails at node creation:**
+- **GPU service quota** — typically zero on fresh accounts, per-region and per-GPU-family. **Request an increase before running**, or provisioning fails at node creation:
   - **AWS:** "Running On-Demand G and VT instances" quota `L-DB2E81BA` (measured in vCPUs) in the target region.
   - **Azure:** NC/ND/NV VM-family vCPU quota in the target location.
   - **GCP:** Global GPU quota + per-region, per-type GPU quota.
@@ -79,7 +74,7 @@ make test-terratest-gcp
 Each cloud has an `infra/terraform/<cloud>/bootstrap/` config that you apply **once** (it uses local state) to create the prerequisites the pipeline depends on:
 
 1. the **remote Terraform state backend** — an S3 bucket + DynamoDB lock table (AWS), a storage account + container (Azure), or a GCS bucket (GCP); and
-2. the **GitHub OIDC** identity provider, deployer role/app/service account, and the least-privilege permissions documented under [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup) (the bootstrap automates that setup; the manual steps there are the underlying reference).
+2. the **GitHub OIDC** identity provider, deployer role/app/service account, and least-privilege permissions — see [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup) for the manual steps bootstrap automates.
 
 After `terraform apply` in a bootstrap dir:
 
@@ -120,9 +115,7 @@ Everything the workflows read, in one place. Add these under **Settings → Secr
 
 ### Environments
 
-Create `e2e-aws`, `e2e-azure`, `e2e-gcp` under **Settings → Environments**, each with required reviewers — the approval gate for the paid apply jobs in `e2e-cloud.yaml`.
-
-The credential-less jobs (`fmt` / `validate` / `tflint` / `checkov` / `docs`) need none of the above; only the `plan-*`, `cost`, and e2e apply/destroy jobs consume them.
+Create `e2e-aws`, `e2e-azure`, `e2e-gcp` under **Settings → Environments**, each with required reviewers — the approval gate for the paid apply jobs in `e2e-cloud.yaml`. Only the `plan-*`, `cost`, and e2e apply/destroy jobs consume any of the above; the credential-less jobs (`fmt`/`validate`/`tflint`/`checkov`/`docs`) need none of it.
 
 ## Configuration (Environment Variables)
 
@@ -162,14 +155,11 @@ The state key is derived per run as `e2e/<cloud>/<cluster_name>.tfstate` (GCS us
 
 ## Cost & Teardown ⚠️
 
-**These tests provision REAL clusters and bill real money by the hour.**
+**These tests provision REAL clusters and bill real money by the hour.** Estimated cost: ~$0.55–$1.20/hr per cloud stack, depending on region and GPU type. Always watch the logs for `terraform destroy` completion.
 
-- Estimated cost: ~$0.55–$1.20/hr per cloud stack, depending on region and GPU type.
-- **Always confirm teardown.** Watch the logs for `terraform destroy` completion.
+**Automatic teardown:** the test defers `terraform destroy`, which runs on exit (success or failure). CI adds a safety-net `terraform destroy` job if the test process is killed.
 
-**Automatic teardown:** The test defers `terraform destroy`, which runs on exit (success or failure). The CI workflow adds a safety-net `terraform destroy` job if the test process is killed.
-
-**Finding leftovers:** All resources are tagged `Project=keda-gpu-scaler` (GCP uses label `project=keda-gpu-scaler`). If a run is interrupted, find and destroy manually:
+**Finding leftovers:** all resources are tagged `Project=keda-gpu-scaler` (GCP uses label `project=keda-gpu-scaler`). If a run is interrupted, find and destroy manually:
 ```bash
 cd infra/terraform/<cloud>
 terraform destroy
@@ -178,14 +168,14 @@ terraform destroy
 ## CI Workflow
 
 **`e2e-cloud.yaml`** — the apply-level suite:
-- **Trigger:** `workflow_dispatch` (manual, gated). Select cloud(s); type `apply` in the confirm input. A run self-destroys when it finishes; to tear down a cluster that leaked past that, use the **E2E Destroy** workflow (pick cloud, enter the cluster name, type `destroy`).
+- **Trigger:** manual `workflow_dispatch` — pick cloud(s), type `apply` to confirm. A run self-destroys when it finishes; use **E2E Destroy** for a cluster that leaked past that.
 - **Auth:** OIDC/federated cloud auth — no long-lived keys stored. See [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup).
-- **Approval:** Each cloud has a per-cloud GitHub Environment requiring approval before running.
+- **Approval:** gated per-cloud by a GitHub Environment — see [Who can deploy](#who-can-deploy--how-its-gated) for what that does and doesn't guarantee.
 - **Diagnostics:** on failure the test dumps scaler pod logs, node status, `demo-app`/ScaledObject describe, and recent events (to `E2E_ARTIFACTS_DIR`); the job uploads those plus the full `go test` log as a build artifact (`if: always()`), so a failed run is debuggable after the fact.
-- **Scope:** Intentionally NOT run on every PR/push, matching the repo's "infra CI is manual only" stance.
+- **Scope:** not run on every PR/push, matching the repo's "infra CI is manual only" stance.
 
 **Related workflows:**
-- **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`, **fully credential-less (never connects to a cloud account)**: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking); an Infracost `cost` estimate per cloud (needs only `INFRACOST_API_KEY`, no cloud creds); and a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
+- **`infra-validate.yaml`** — per-PR gates on `infra/terraform/**`, fully credential-less: `terraform fmt`, `validate`, `tflint`, `checkov` (blocking); an Infracost `cost` estimate per cloud (needs only `INFRACOST_API_KEY`); a `terraform-docs` job that keeps each stack README's inputs/outputs table current.
 - **`terraform-plan.yml`** — manual `workflow_dispatch` (pick a cloud) that runs `terraform plan` with OIDC and saves the plan as an artifact + tf-summarize digest + job summary. Moved out of the PR pipeline so PRs never require cloud connectivity; runs in the `e2e-<cloud>` Environment (same OIDC subject as apply/destroy).
 
 ## Who can deploy / how it's gated
@@ -208,12 +198,7 @@ The workflows always declare `environment: e2e-<cloud>` (needed for the OIDC sub
 
 CI never stores long-lived cloud keys. Instead, GitHub Actions mints a short-lived OIDC token per job and exchanges it for temporary cloud credentials (AWS `AssumeRoleWithWebIdentity`, Azure federated credential, GCP Workload Identity Federation). This section is the one-time setup a maintainer runs per cloud account.
 
-Three workflows consume these credentials, and **all run in a GitHub Environment** (`e2e-aws` / `e2e-azure` / `e2e-gcp`):
-- `.github/workflows/e2e-cloud.yaml` — the e2e apply job.
-- `.github/workflows/terraform-plan.yml` — the manual `plan-*` jobs.
-- `.github/workflows/destroy.yaml` — the manual destroy jobs.
-
-Because all three run in the Environment, they present the **same** OIDC subject (`repo:<repo>:environment:e2e-<cloud>`). The trust policy therefore only needs the `environment:` subjects. (The bootstrap also emits a `pull_request` subject — a leftover from when plan ran on PRs; it's now unused by any workflow. Harmless to leave; drop it for tighter least-privilege.)
+Three workflows consume these credentials, and **all run in a GitHub Environment** (`e2e-aws` / `e2e-azure` / `e2e-gcp`): `.github/workflows/e2e-cloud.yaml` (the e2e apply job), `.github/workflows/terraform-plan.yml` (the manual `plan-*` jobs), and `.github/workflows/destroy.yaml` (the manual destroy jobs). Because all three run in the Environment, they present the **same** OIDC subject: `repo:<repo>:environment:e2e-<cloud>`. (The bootstrap also emits a `pull_request` subject — a leftover from when plan ran on PRs; it's now unused by any workflow. Harmless to leave; drop it for tighter least-privilege.)
 
 ### AWS
 
@@ -225,10 +210,9 @@ Because all three run in the Environment, they present the **same** OIDC subject
      --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
    ```
 
-2. **Create an IAM role** federated to that provider. All cloud workflows (apply, manual plan, destroy) run in the `e2e-aws` Environment, so they present one subject:
+2. **Create an IAM role** federated to that provider, trusting:
    - `repo:jasonp2323/keda-gpu-scaler:environment:e2e-aws`
-
-   (The bootstrap also adds a `repo:jasonp2323/keda-gpu-scaler:pull_request` subject — now unused since plan moved to a manual, Environment-scoped workflow. Harmless, or drop it for least privilege.)
+   - `repo:jasonp2323/keda-gpu-scaler:pull_request` (unused leftover — see above; safe to omit)
 
    **Immutable `sub` (repos created after 2026-07-15):** GitHub issues the `sub` claim as `repo:OWNER@OWNER_ID/REPO@REPO_ID:...` for newer repos. A trust policy matching only the classic `repo:OWNER/REPO:...` form fails with *"Not authorized to perform sts:AssumeRoleWithWebIdentity."* — so match **both**. Fetch the numeric IDs:
    ```bash
@@ -263,7 +247,7 @@ Because all three run in the Environment, they present the **same** OIDC subject
      ]
    }
    ```
-   The `aws/bootstrap` config builds this list for you — set its `github_owner_id` / `github_repo_id` variables (leave empty to trust the classic form only). (Looser alternative: replace the four subjects with `"repo:jasonp2323/keda-gpu-scaler:*"` and its immutable twin `"repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:*"`.)
+   The `aws/bootstrap` config builds this list for you — set its `github_owner_id` / `github_repo_id` variables (leave empty to trust the classic form only). Looser alternative: replace the four subjects with `"repo:jasonp2323/keda-gpu-scaler:*"` and its immutable twin `"repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:*"`.
 
 3. **Attach a permissions policy.** Rather than `AdministratorAccess`, attach a policy scoped to the services this stack actually provisions: EC2/VPC networking, EKS + the managed node group, the cluster/node IAM roles and IRSA OIDC provider, the EKS secrets-encryption KMS key, and control-plane CloudWatch logs. Save this as `deployer-policy.json`:
    ```json
@@ -417,7 +401,7 @@ Because all three run in the Environment, they present the **same** OIDC subject
      }'
    ```
 
-   **Immutable `sub` (repos created after 2026-07-15):** federated credentials match the `sub` claim **exactly**, so a repo issuing the immutable `repo:OWNER@OWNER_ID/REPO@REPO_ID:...` form needs a **second credential per subject** with that form (e.g. `repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:environment:e2e-azure`). The `azure/bootstrap` config adds these automatically when you set its `github_owner_id` / `github_repo_id` variables (fetch the IDs with the `gh api` command shown in the AWS section).
+   **Immutable `sub`:** unlike AWS's wildcard-friendly trust policy, federated credentials match the `sub` claim **exactly** — a repo issuing the immutable `repo:OWNER@OWNER_ID/REPO@REPO_ID:...` form (repos created after 2026-07-15) needs a **second credential per subject** in that form (e.g. `repo:jasonp2323@<OWNER_ID>/keda-gpu-scaler@<REPO_ID>:environment:e2e-azure`). `azure/bootstrap` adds these automatically when you set its `github_owner_id` / `github_repo_id` variables (fetch the IDs with the `gh api` command shown in the AWS section).
 
 3. **Grant the app access via a custom role.** This stack creates only a resource group and an AKS cluster with a **system-assigned** identity (no custom VNet, no `azurerm_role_assignment`), so it needs neither broad `Contributor` nor `User Access Administrator`. Define a role scoped to just those providers — save as `azure-deployer-role.json`:
    ```json
@@ -501,7 +485,7 @@ Because all three run in the Environment, they present the **same** OIDC subject
 ### GitHub side
 
 - Add all secrets/variables above under **Settings → Secrets and variables → Actions** (secrets for credentials, variables for the non-secret region/project values).
-- Create the three GitHub **Environments** — `e2e-aws`, `e2e-azure`, `e2e-gcp` — under **Settings → Environments**. They supply the OIDC subject the trust policy expects, and — on a **public repo or GitHub Enterprise** — enforce required-reviewer approval before a run proceeds. On a private repo below Enterprise, environment approval is unavailable, so the effective gate is: only users with **write access** can trigger a run, and they must type `apply` / `destroy` to confirm. See [Who can deploy / how it's gated](#who-can-deploy--how-its-gated).
+- Create the `e2e-aws` / `e2e-azure` / `e2e-gcp` [Environments](#environments) — they supply the OIDC subject the trust policy expects, and, on a **public repo or GitHub Enterprise**, enforce required-reviewer approval before a run proceeds. See [Who can deploy](#who-can-deploy--how-its-gated) for what applies on a private repo below Enterprise.
 - The credential-less gates (`fmt`, `validate`, `tflint`, `checkov`) need none of this setup — only the `plan-*` jobs and the e2e apply/destroy jobs authenticate to a cloud.
 - **Infracost (optional):** the `cost` job needs the `INFRACOST_API_KEY` secret (free key from infracost.io). Without it the cost steps skip and the rest of the pipeline is unaffected.
 
