@@ -125,6 +125,8 @@ data "aws_iam_policy_document" "deployer" {
       "iam:GetOpenIDConnectProvider",
       "iam:TagOpenIDConnectProvider",
       "iam:CreateServiceLinkedRole",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
     ]
     resources = ["*"]
   }
@@ -189,6 +191,16 @@ data "aws_iam_policy_document" "deployer" {
       aws_s3_bucket.state.arn,
       "${aws_s3_bucket.state.arn}/*",
     ]
+  }
+  statement {
+    sid    = "EKSOptimizedAMISSM"
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+    ]
+    # Public EKS-optimized AMI params (note the empty account field in the ARN).
+    resources = ["arn:aws:ssm:*::parameter/aws/service/eks/optimized-ami/*"]
   }
 }
 
