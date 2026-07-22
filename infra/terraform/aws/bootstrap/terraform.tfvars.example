@@ -8,9 +8,10 @@ github_repository  = "jasonp2323/keda-gpu-scaler"
 # github_owner_id = "0000000"
 # github_repo_id  = "000000000"
 
-# Bucket names are global across all of S3 - pick something unique.
-state_bucket_name     = "keda-gpu-scaler-tf-state-<unique-suffix>"
-state_lock_table_name = "keda-gpu-scaler-tf-lock"
+# Optional: base name for the state bucket (default "terraform-backend-state").
+# bucket_namespace = "account-regional" scopes it per account+region, so it
+# need not be globally unique.
+# state_bucket_name = "terraform-backend-state"
 
 role_name    = "keda-gpu-scaler-e2e"
 environments = ["e2e-aws"]

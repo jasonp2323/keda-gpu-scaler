@@ -23,11 +23,10 @@ func TestAWSGPUScalerE2E(t *testing.T) {
 		t.Fatal("E2E_AWS_STATE_BUCKET must be set — run infra/terraform/aws/bootstrap and use its state_bucket output")
 	}
 	backendConfig := map[string]interface{}{
-		"bucket":         stateBucket,
-		"key":            "e2e/aws/" + clusterName + ".tfstate",
-		"region":         envOrDefault("AWS_REGION", "us-east-2"),
-		"dynamodb_table": envOrDefault("E2E_AWS_STATE_LOCK_TABLE", "keda-gpu-scaler-tf-lock"),
-		"encrypt":        true,
+		"bucket":  stateBucket,
+		"key":     "e2e/aws/" + clusterName + ".tfstate",
+		"region":  envOrDefault("AWS_REGION", "us-east-2"),
+		"encrypt": true,
 	}
 
 	vars := map[string]interface{}{

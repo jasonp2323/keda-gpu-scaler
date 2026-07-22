@@ -73,7 +73,7 @@ make test-terratest-gcp
 
 Each cloud has an `infra/terraform/<cloud>/bootstrap/` config that you apply **once** (it uses local state) to create the prerequisites the pipeline depends on:
 
-1. the **remote Terraform state backend** — an S3 bucket + DynamoDB lock table (AWS), a storage account + container (Azure), or a GCS bucket (GCP); and
+1. the **remote Terraform state backend** — an S3 bucket with native state locking (AWS), a storage account + container (Azure), or a GCS bucket (GCP); and
 2. the **GitHub OIDC** identity provider, deployer role/app/service account, and least-privilege permissions — see [OIDC / Cloud Authentication Setup](#oidc--cloud-authentication-setup) for the manual steps bootstrap automates.
 
 After `terraform apply` in a bootstrap dir:
@@ -106,7 +106,6 @@ Everything the workflows read, in one place. Add these under **Settings → Secr
 |----------|---------|---------------------|
 | `AWS_E2E_REGION` | e2e-apply, plan-aws | your target AWS region (match `aws/bootstrap` `region`) |
 | `AWS_E2E_STATE_BUCKET` | e2e-apply, plan-aws | `aws/bootstrap` output `state_bucket` |
-| `AWS_E2E_STATE_LOCK_TABLE` | e2e-apply, plan-aws | `aws/bootstrap` output `state_lock_table` |
 | `AZURE_E2E_STATE_RESOURCE_GROUP` | e2e-apply, plan-azure | `azure/bootstrap` output `state_resource_group` |
 | `AZURE_E2E_STATE_STORAGE_ACCOUNT` | e2e-apply, plan-azure | `azure/bootstrap` output `state_storage_account` |
 | `AZURE_E2E_STATE_CONTAINER` | e2e-apply, plan-azure | `azure/bootstrap` output `state_container` (default `tfstate`) |
@@ -144,7 +143,6 @@ All variables are optional unless marked **required**.
 | `E2E_GPU_TYPE` | GCP | `nvidia-tesla-t4` | GCP GPU type. |
 | `E2E_HELM_TIMEOUT` | GCP | `1800` | Helm timeout in seconds (30 min). |
 | `E2E_AWS_STATE_BUCKET` | AWS | — | **REQUIRED (remote backend).** S3 bucket — `aws/bootstrap` `state_bucket` output. |
-| `E2E_AWS_STATE_LOCK_TABLE` | AWS | `keda-gpu-scaler-tf-lock` | DynamoDB lock table — `aws/bootstrap` `state_lock_table` output. |
 | `E2E_AZURE_STATE_RESOURCE_GROUP` | Azure | — | **REQUIRED (remote backend).** State resource group — `azure/bootstrap` output. |
 | `E2E_AZURE_STATE_STORAGE_ACCOUNT` | Azure | — | **REQUIRED (remote backend).** State storage account — `azure/bootstrap` output. |
 | `E2E_AZURE_STATE_CONTAINER` | Azure | `tfstate` | Blob container — `azure/bootstrap` output. |

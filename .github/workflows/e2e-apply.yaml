@@ -65,7 +65,6 @@ jobs:
       E2E_HELM_TIMEOUT: '900'
       # Remote state backend created by infra/terraform/aws/bootstrap.
       E2E_AWS_STATE_BUCKET: ${{ vars.AWS_E2E_STATE_BUCKET }}
-      E2E_AWS_STATE_LOCK_TABLE: ${{ vars.AWS_E2E_STATE_LOCK_TABLE }}
       # Where the Go test writes failure diagnostics; uploaded as an artifact below.
       E2E_ARTIFACTS_DIR: ${{ github.workspace }}/e2e-artifacts
     steps:
@@ -169,7 +168,6 @@ jobs:
             -backend-config="bucket=${E2E_AWS_STATE_BUCKET}" \
             -backend-config="key=e2e/aws/${E2E_CLUSTER_NAME}.tfstate" \
             -backend-config="region=${AWS_REGION}" \
-            -backend-config="dynamodb_table=${E2E_AWS_STATE_LOCK_TABLE}" \
             -backend-config="encrypt=true"
           terraform -chdir=infra/terraform/aws destroy -auto-approve
 

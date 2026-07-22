@@ -4,8 +4,7 @@
 
 | Resource | Purpose |
 |---|---|
-| `aws_s3_bucket.state` (versioned, SSE-S3, public-access-block) | Remote Terraform state for the main stack |
-| `aws_dynamodb_table.lock` | State locking (`PAY_PER_REQUEST`, hash key `LockID`) |
+| `aws_s3_bucket.state` (versioned, SSE-S3, object-lock, lifecycle, public-access-block) | Remote Terraform state for the main stack; native S3 locking (no DynamoDB) |
 | `aws_iam_openid_connect_provider.github` | Trust for `token.actions.githubusercontent.com` |
 | `aws_iam_role.deployer` + inline policy | Role GitHub Actions assumes to plan/apply the main stack |
 
@@ -15,7 +14,7 @@ yet to point at. Keep `terraform.tfstate` for this directory safe, or re-run
 configs depend on it.
 
 Apply with credentials that can create IAM roles/policies, an OIDC provider, an
-S3 bucket, and a DynamoDB table (e.g. your own admin AWS creds — not the role
+S3 bucket (e.g. your own admin AWS creds — not the role
 this config creates).
 
 ## Usage
@@ -41,11 +40,11 @@ share one bucket without clobbering each other's state.
 The deployer role's permissions are the same scoped policy documented in
 `tests/terratest/README.md` (### AWS) — EC2/autoscaling, EKS, the
 cluster/node/IRSA IAM roles, the secrets-encryption KMS key, control-plane
-CloudWatch logs, `sts:GetCallerIdentity` — plus S3/DynamoDB permissions scoped
-to just the state bucket and lock table this config creates.
+CloudWatch logs, `sts:GetCallerIdentity` — plus S3 permissions scoped
+to just the state bucket this config creates (the native lock file lives in it).
 
 ## Cost
 
-S3 + DynamoDB (`PAY_PER_REQUEST`) and the IAM role/OIDC provider are
+The S3 bucket and the IAM role/OIDC provider are
 effectively free. No `terraform destroy` expected in normal operation — this
 is long-lived, shared infrastructure, not a per-test resource.

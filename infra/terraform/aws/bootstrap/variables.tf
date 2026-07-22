@@ -23,14 +23,9 @@ variable "github_repo_id" {
 }
 
 variable "state_bucket_name" {
-  description = "S3 bucket for the main stack's Terraform state. Required: bucket names are globally unique, so there's no safe default."
+  description = "Base name of the S3 bucket for the main stack's Terraform state. bucket_namespace = \"account-regional\" scopes it per account+region, so it need not be globally unique."
   type        = string
-}
-
-variable "state_lock_table_name" {
-  description = "DynamoDB table used for Terraform state locking."
-  type        = string
-  default     = "keda-gpu-scaler-tf-lock"
+  default     = "terraform-backend-state"
 }
 
 variable "role_name" {
