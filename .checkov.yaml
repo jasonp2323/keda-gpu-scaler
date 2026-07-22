@@ -10,7 +10,8 @@ skip-check:
   # Remote-state S3 bucket (throwaway test state; native S3 locking, no DynamoDB).
   - CKV_AWS_18    # S3 access logging — needs a second log bucket; test-only state
   - CKV_AWS_144   # S3 cross-region replication — needless cost for throwaway state
-  - CKV_AWS_145   # S3 KMS CMK — bucket relies on default SSE-S3; CMK is overkill here
+  - CKV_AWS_145   # S3 KMS CMK — bucket uses AES256 SSE; CMK is overkill here
+  - CKV2_AWS_61   # S3 lifecycle config — state versions are retained on purpose
   - CKV2_AWS_62   # S3 event notifications — not needed for a state bucket
 
   # OIDC deployer identities — broad by necessity, scoped to one repo's CI.

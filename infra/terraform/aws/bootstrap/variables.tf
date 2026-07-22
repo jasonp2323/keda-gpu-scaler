@@ -23,9 +23,9 @@ variable "github_repo_id" {
 }
 
 variable "state_bucket_name" {
-  description = "Base name of the S3 bucket for the main stack's Terraform state. bucket_namespace = \"account-regional\" scopes it per account+region, so it need not be globally unique."
+  description = "Explicit state bucket name. Empty derives aws-s3-tfstate-<account>-<region>-an; bucket_namespace = \"account-regional\" keeps it unique."
   type        = string
-  default     = "terraform-backend-state"
+  default     = ""
 }
 
 variable "role_name" {

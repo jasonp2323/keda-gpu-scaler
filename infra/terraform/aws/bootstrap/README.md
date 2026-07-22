@@ -4,7 +4,7 @@
 
 | Resource | Purpose |
 |---|---|
-| `aws_s3_bucket.state` (versioned, SSE-S3, object-lock, lifecycle, public-access-block) | Remote Terraform state for the main stack; native S3 locking (no DynamoDB) |
+| `aws_s3_bucket.state` (versioned, SSE-S3, public-access-block) | Remote Terraform state for the main stack; native S3 locking (no DynamoDB) |
 | `aws_iam_openid_connect_provider.github` | Trust for `token.actions.githubusercontent.com` |
 | `aws_iam_role.deployer` + inline policy | Role GitHub Actions assumes to plan/apply the main stack |
 

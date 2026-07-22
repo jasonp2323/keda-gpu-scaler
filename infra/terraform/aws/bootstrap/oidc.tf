@@ -68,7 +68,7 @@ resource "aws_iam_role" "deployer" {
   assume_role_policy = data.aws_iam_policy_document.deployer_trust.json
 }
 
-# Deployer permissions: the 6-statement policy from tests/terratest/README.md's deployer-policy.json, plus backend access to the state bucket/lock table.
+# Deployer permissions: the 6-statement policy from tests/terratest/README.md's deployer-policy.json, plus backend access to the state bucket (its native S3 lock file included).
 data "aws_iam_policy_document" "deployer" {
   statement {
     sid    = "NetworkingAndCompute"
