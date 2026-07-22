@@ -136,7 +136,8 @@ jobs:
         run: |
           mkdir -p "$E2E_ARTIFACTS_DIR"
           set -o pipefail
-          go test -tags e2e_aws -timeout 60m -v ./tests/terratest/ 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-aws.log"
+          cd tests/terratest
+          go test -tags e2e_aws -timeout 60m -v ./... 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-aws.log"
 
       - name: Upload e2e diagnostics (AWS)
         if: always()
@@ -257,7 +258,8 @@ jobs:
         run: |
           mkdir -p "$E2E_ARTIFACTS_DIR"
           set -o pipefail
-          go test -tags e2e_azure -timeout 60m -v ./tests/terratest/ 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-azure.log"
+          cd tests/terratest
+          go test -tags e2e_azure -timeout 60m -v ./... 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-azure.log"
 
       - name: Upload e2e diagnostics (Azure)
         if: always()
@@ -385,7 +387,8 @@ jobs:
         run: |
           mkdir -p "$E2E_ARTIFACTS_DIR"
           set -o pipefail
-          go test -tags e2e_gcp -timeout 60m -v ./tests/terratest/ 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-gcp.log"
+          cd tests/terratest
+          go test -tags e2e_gcp -timeout 60m -v ./... 2>&1 | tee "$E2E_ARTIFACTS_DIR/gotest-gcp.log"
 
       - name: Upload e2e diagnostics (GCP)
         if: always()

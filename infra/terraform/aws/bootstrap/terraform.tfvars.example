@@ -8,10 +8,9 @@ github_repository  = "jasonp2323/keda-gpu-scaler"
 # github_owner_id = "0000000"
 # github_repo_id  = "000000000"
 
-# Optional: base name for the state bucket (default "terraform-backend-state").
-# bucket_namespace = "account-regional" scopes it per account+region, so it
-# need not be globally unique.
-# state_bucket_name = "terraform-backend-state"
+# Optional: explicit state bucket name. Empty derives aws-s3-tfstate-<account>-<region>-an;
+# bucket_namespace = "account-regional" keeps it unique.
+# state_bucket_name = ""
 
 role_name    = "keda-gpu-scaler-e2e"
 environments = ["e2e-aws"]
