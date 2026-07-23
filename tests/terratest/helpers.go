@@ -199,6 +199,44 @@ func getDemoAppReplicas(t *testing.T, opts *k8s.KubectlOptions) (int, error) {
 	return strconv.Atoi(out)
 }
 
+// gpuMetricSnapshot returns a short "current/target" string for the GPU-utilization
+// metric KEDA is scaling on, read from the managed HPA. Best-effort: returns "" if
+// the HPA or metric value isn't readable yet (never fails the test).
+func gpuMetricSnapshot(t *testing.T, opts *k8s.KubectlOptions) string {
+	t.Helper()
+	hpa := "keda-hpa-" + scaledObjectName
+	// KEDA external metrics report under either averageValue (AverageValue type,
+	// the default) or value (Value type); try both.
+	cur := kubectlFirstNonEmpty(t, opts, hpa,
+		`jsonpath={.status.currentMetrics[0].external.current.averageValue}`,
+		`jsonpath={.status.currentMetrics[0].external.current.value}`)
+	if cur == "" {
+		return ""
+	}
+	target := kubectlFirstNonEmpty(t, opts, hpa,
+		`jsonpath={.spec.metrics[0].external.target.averageValue}`,
+		`jsonpath={.spec.metrics[0].external.target.value}`)
+	if target == "" {
+		return "gpu=" + cur
+	}
+	return "gpu=" + cur + "/" + target
+}
+
+// kubectlFirstNonEmpty runs `kubectl get hpa <hpa> -o <expr>` for each expr and
+// returns the first trimmed non-empty result, or "" if all fail/empty. Best-effort.
+func kubectlFirstNonEmpty(t *testing.T, opts *k8s.KubectlOptions, hpa string, exprs ...string) string {
+	t.Helper()
+	for _, expr := range exprs {
+		out, err := k8s.RunKubectlAndGetOutputE(t, opts, "get", "hpa", hpa, "-o", expr)
+		if err == nil {
+			if v := strings.TrimSpace(out); v != "" {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
 // assertReplicas polls until demo-app's replica count equals want, or fails the test after timeout.
 func assertReplicas(t *testing.T, opts *k8s.KubectlOptions, want int, timeout time.Duration) {
 	t.Helper()
@@ -209,10 +247,11 @@ func assertReplicas(t *testing.T, opts *k8s.KubectlOptions, want int, timeout ti
 			if err != nil {
 				return "", err
 			}
+			gpu := gpuMetricSnapshot(t, opts)
 			if got != want {
-				return "", fmt.Errorf("%s replicas = %d, want %d", demoAppName, got, want)
+				return "", fmt.Errorf("%s replicas = %d (%s), want %d", demoAppName, got, gpu, want)
 			}
-			return "replica count matches", nil
+			return fmt.Sprintf("replica count matches: %s replicas = %d (%s)", demoAppName, got, gpu), nil
 		})
 }
 
@@ -226,10 +265,11 @@ func assertReplicasAbove(t *testing.T, opts *k8s.KubectlOptions, floor int, time
 			if err != nil {
 				return "", err
 			}
+			gpu := gpuMetricSnapshot(t, opts)
 			if got <= floor {
-				return "", fmt.Errorf("%s replicas = %d, want > %d", demoAppName, got, floor)
+				return "", fmt.Errorf("%s replicas = %d (%s), want > %d", demoAppName, got, gpu, floor)
 			}
-			return "scaled up", nil
+			return fmt.Sprintf("scaled up: %s replicas = %d (%s)", demoAppName, got, gpu), nil
 		})
 }
 
