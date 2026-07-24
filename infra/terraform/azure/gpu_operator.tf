@@ -1,21 +1,17 @@
 # NVIDIA GPU operator.
 #
-# The GPU node pool is created with gpu_driver = "None" (see main.tf), so AKS
-# installs NO GPU software. The operator therefore owns the entire stack — the
-# opposite split from the EKS sibling, where the AL2023 NVIDIA AMI already ships
-# the driver/toolkit so the operator only adds the device plugin. Here we let
-# the operator provide:
-#   - the NVIDIA host driver (driver.enabled = true),
-#   - the NVIDIA container toolkit, which configures containerd's `nvidia`
-#     runtime handler the `nvidia` RuntimeClass points at (toolkit.enabled = true),
-#   - the NVIDIA k8s device plugin (advertises nvidia.com/gpu),
-#   - node-feature-discovery + GPU-feature-discovery, which apply the
-#     `nvidia.com/gpu.present=true` node label the scaler's nodeSelector targets,
-#   - DCGM / dcgm-exporter,
-#   - the `nvidia` RuntimeClass referenced by the scaler pod template.
+# AKS installs the host driver (gpu_driver = "Install" in main.tf), so
+# driver.enabled = false — the operator uses the pre-installed host driver,
+# same as the EKS sibling uses the AMI's driver.
 #
-# This is NVIDIA's documented approach for AKS (skip the AKS driver, run the
-# operator): https://learn.microsoft.com/azure/aks/nvidia-gpu-operator
+# toolkit.enabled stays true: unlike the EKS NVIDIA AMI, AKS does not register
+# a named `nvidia` containerd runtime handler. The operator's toolkit provides
+# that runtime handler and the `nvidia` RuntimeClass the scaler's
+# `runtimeClassName: nvidia` targets. The operator also provides the device
+# plugin (advertises nvidia.com/gpu), NFD/GFD (the `nvidia.com/gpu.present=true`
+# node label), and the `nvidia` RuntimeClass.
+#
+# https://learn.microsoft.com/azure/aks/nvidia-gpu-operator
 resource "helm_release" "gpu_operator" {
   name             = "gpu-operator"
   namespace        = "gpu-operator"
@@ -25,12 +21,13 @@ resource "helm_release" "gpu_operator" {
   chart      = "gpu-operator"
   version    = var.gpu_operator_chart_version
 
-  # Both are the operator defaults; set explicitly to document that on AKS the
-  # operator — not the node image — installs the driver and toolkit.
+  # driver.enabled = false: AKS already installed the host driver. toolkit.enabled
+  # stays true so the operator provides the named `nvidia` containerd runtime and
+  # RuntimeClass, which AKS does not register itself.
   set = [
     {
       name  = "driver.enabled"
-      value = "true"
+      value = "false"
     },
     {
       name  = "toolkit.enabled"
@@ -38,8 +35,8 @@ resource "helm_release" "gpu_operator" {
     },
   ]
 
-  # Driver build + device-plugin/GFD rollout and node labelling can take several
-  # minutes after the node joins.
+  # No driver build now — just the toolkit + device-plugin/GFD rollout and node
+  # labelling, a couple of minutes after the node joins.
   wait    = true
   timeout = var.helm_timeout
 
