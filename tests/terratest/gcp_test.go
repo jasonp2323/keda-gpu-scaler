@@ -38,7 +38,7 @@ func TestGCPGPUScalerE2E(t *testing.T) {
 		"region":                  envOrDefault("E2E_GCP_REGION", "us-central1"),
 		"zone":                    envOrDefault("E2E_GCP_ZONE", "us-central1-a"),
 		"cluster_name":            clusterName,
-		"kubernetes_version":      envOrDefault("E2E_K8S_VERSION", "1.33"),
+		"kubernetes_version":      envOrDefault("E2E_K8S_VERSION", "1.34"),
 		"gpu_machine_type":        envOrDefault("E2E_GPU_MACHINE_TYPE", "n1-standard-4"),
 		"gpu_type":                envOrDefault("E2E_GPU_TYPE", "nvidia-tesla-t4"),
 		"gpu_per_node":            1,

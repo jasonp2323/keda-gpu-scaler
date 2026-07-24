@@ -31,12 +31,12 @@ jobs:
       # blocks on interactive input; follows terraform.tfvars.example.
       TF_VAR_region: us-east-2
       TF_VAR_cluster_name: keda-gpu-scaler-ci-plan
-      TF_VAR_kubernetes_version: '1.33'
-      TF_VAR_tags: '{}'
-      TF_VAR_gpu_instance_type: g5.xlarge
-      TF_VAR_gpu_node_count: 1
-      TF_VAR_scaler_image_repository: ghcr.io/pmady/keda-gpu-scaler
-      TF_VAR_helm_timeout: 600
+      TF_VAR_kubernetes_version: ${{ vars.AWS_E2E_K8S_VERSION || '1.34' }}
+      TF_VAR_tags: ${{ vars.AWS_E2E_TAGS || '{}' }}
+      TF_VAR_gpu_instance_type: ${{ vars.AWS_E2E_GPU_INSTANCE_TYPE || 'g5.xlarge' }}
+      TF_VAR_gpu_node_count: ${{ vars.AWS_E2E_GPU_NODE_COUNT || '1' }}
+      TF_VAR_scaler_image_repository: ${{ vars.AWS_E2E_SCALER_IMAGE_REPOSITORY || 'ghcr.io/pmady/keda-gpu-scaler' }}
+      TF_VAR_helm_timeout: ${{ vars.AWS_E2E_HELM_TIMEOUT || '600' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -403,13 +403,13 @@ jobs:
       # Placeholders for required (no-default) vars so init/plan never
       # blocks on interactive input; follows terraform.tfvars.example.
       TF_VAR_project_id: ${{ vars.GCP_E2E_PROJECT }}
-      TF_VAR_region: us-central1
-      TF_VAR_zone: us-central1-a
+      TF_VAR_region: ${{ vars.GCP_E2E_REGION || 'us-west4' }}
+      TF_VAR_zone: ${{ vars.GCP_E2E_ZONE || 'us-west4-b' }}
       TF_VAR_cluster_name: keda-gpu-scaler-ci-plan
-      TF_VAR_kubernetes_version: '1.33'
-      TF_VAR_labels: '{}'
-      TF_VAR_scaler_image_repository: ghcr.io/pmady/keda-gpu-scaler
-      TF_VAR_helm_timeout: 1800
+      TF_VAR_kubernetes_version: ${{ vars.GCP_E2E_K8S_VERSION || '1.34' }}
+      TF_VAR_labels: ${{ vars.GCP_E2E_LABELS || '{}' }}
+      TF_VAR_scaler_image_repository: ${{ vars.GCP_E2E_SCALER_IMAGE_REPOSITORY || 'ghcr.io/pmady/keda-gpu-scaler' }}
+      TF_VAR_helm_timeout: ${{ vars.GCP_E2E_HELM_TIMEOUT || '1800' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
