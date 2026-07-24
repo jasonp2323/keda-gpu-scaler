@@ -356,6 +356,16 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_E2E_WIF_PROVIDER }}
           service_account: ${{ secrets.GCP_E2E_SERVICE_ACCOUNT }}
 
+      # GKE's kubeconfig authenticates kubectl via the gke-gcloud-auth-plugin exec
+      # credential, which isn't on the runner by default — every kubectl call in the
+      # test fails without it. apt-managed gcloud installs it as a package; fall back
+      # to the component manager if the package isn't available.
+      - name: Install gke-gcloud-auth-plugin
+        run: |
+          sudo apt-get update && sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin \
+            || gcloud components install gke-gcloud-auth-plugin --quiet
+          gke-gcloud-auth-plugin --version
+
       - name: Set up Infracost (GCP)
         continue-on-error: true
         uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
