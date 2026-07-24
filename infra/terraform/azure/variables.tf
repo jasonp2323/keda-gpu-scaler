@@ -112,7 +112,7 @@ variable "scaler_runtime_class_name" {
 }
 
 variable "helm_timeout" {
-  description = "Per-release Helm wait timeout in seconds. Generous because on AKS the GPU operator also builds/installs the driver, which can take several minutes."
+  description = "Per-release Helm wait timeout in seconds. AKS installs the driver; this covers the operator's toolkit + device-plugin rollout and node labelling."
   type        = number
   default     = 900
 }
