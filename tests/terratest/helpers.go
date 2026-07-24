@@ -26,8 +26,11 @@ const (
 	scaledObjectName = "demo-app-gpu-scaler" // set in deploy/helm/keda-gpu-scaler-e2e/templates/scaledobject.yaml
 	demoIdleReplicas = 1
 
-	pollInterval    = 10 * time.Second
-	scalerReadyWait = 3 * time.Minute
+	pollInterval = 10 * time.Second
+	// Azure/GCP install the NVIDIA driver + nvidia containerd runtime at runtime via the
+	// GPU operator (AWS bakes it into the AMI), so the scaler pod can't get its sandbox
+	// until that finishes. Generous to cover the operator's driver build on AKS/GKE.
+	scalerReadyWait = 12 * time.Minute
 	idleAssertWait  = 2 * time.Minute
 	scaleUpWait     = 6 * time.Minute
 	scaleDownWait   = 10 * time.Minute
