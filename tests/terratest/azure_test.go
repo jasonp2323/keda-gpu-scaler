@@ -40,7 +40,7 @@ func TestAzureGPUScalerE2E(t *testing.T) {
 		"location":                envOrDefault("E2E_AZURE_LOCATION", "eastus"),
 		"cluster_name":            clusterName,
 		"resource_group_name":     envOrDefault("E2E_AZURE_RESOURCE_GROUP", clusterName+"-rg"),
-		"kubernetes_version":      envOrDefault("E2E_K8S_VERSION", "1.33"),
+		"kubernetes_version":      envOrDefault("E2E_K8S_VERSION", "1.34"),
 		"gpu_vm_size":             envOrDefault("E2E_GPU_VM_SIZE", "Standard_NC4as_T4_v3"),
 		"gpu_node_count":          1,
 		"helm_timeout":            envOrDefaultInt("E2E_HELM_TIMEOUT", 900),
