@@ -60,7 +60,7 @@ No modules.
 | <a name="input_helm_timeout"></a> [helm\_timeout](#input\_helm\_timeout) | Per-release Helm timeout in seconds. Bounds the KEDA install wait and the graceful `helm uninstall` on destroy (the GPU operator teardown is slow). Keep it generous so a slow uninstall doesn't fail and strand the billing GPU node. | `number` | n/a | yes |
 | <a name="input_keda_chart_version"></a> [keda\_chart\_version](#input\_keda\_chart\_version) | KEDA Helm chart version (repo https://kedacore.github.io/charts). | `string` | `"2.20.1"` | no |
 | <a name="input_keda_namespace"></a> [keda\_namespace](#input\_keda\_namespace) | Namespace KEDA and the keda-gpu-scaler are installed into. | `string` | `"keda"` | no |
-| <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | GKE control plane minimum version (<major>.<minor>); must be currently offered in your zone/release channel. | `string` | `"1.33"` | no |
+| <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | GKE control plane minimum version (<major>.<minor>); must be currently offered in your zone/release channel. | `string` | `"1.34"` | no |
 | <a name="input_labels"></a> [labels](#input\_labels) | Extra labels merged into the default labels applied to every resource (e.g. an owner or expiry date). | `map(string)` | n/a | yes |
 | <a name="input_pods_cidr"></a> [pods\_cidr](#input\_pods\_cidr) | IPv4 CIDR block for the subnet's secondary range used for Pod IPs (VPC-native/alias IP). | `string` | `"10.4.0.0/14"` | no |
 | <a name="input_project_id"></a> [project\_id](#input\_project\_id) | GCP project ID to deploy the test cluster into. | `string` | n/a | yes |
