@@ -1,3 +1,7 @@
+# All variables have sensible defaults, so this file is optional — `terraform
+# apply` works unmodified once you hold the GPU service quota in `region`.
+# Copy to terraform.tfvars and override what you need.
+
 region             = "us-east-2"
 cluster_name       = "keda-gpu-scaler-test"
 kubernetes_version = "1.34"

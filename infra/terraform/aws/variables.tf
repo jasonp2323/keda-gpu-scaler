@@ -5,11 +5,13 @@
 variable "region" {
   description = "AWS region to deploy the test cluster into. Pick one with GPU capacity (and where you hold the GPU service quota)."
   type        = string
+  default     = "us-east-2"
 }
 
 variable "cluster_name" {
   description = "Name of the EKS cluster and the prefix used for the VPC and related resources."
   type        = string
+  default     = "keda-gpu-scaler-test"
 }
 
 variable "kubernetes_version" {
@@ -27,6 +29,7 @@ variable "vpc_cidr" {
 variable "tags" {
   description = "Extra tags merged into the default tags applied to every resource (e.g. an owner or expiry date)."
   type        = map(string)
+  default     = {}
 }
 
 ###############################################################################
@@ -36,6 +39,7 @@ variable "tags" {
 variable "gpu_instance_type" {
   description = "GPU instance type"
   type        = string
+  default     = "g5.xlarge"
 }
 
 variable "gpu_ami_type" {
@@ -52,6 +56,7 @@ variable "gpu_ami_type" {
 variable "gpu_node_count" {
   description = "Number of GPU nodes. Fixed-size on-demand pool (min = max = desired). Kept at 1 for predictable, low-cost integration testing."
   type        = number
+  default     = 1
 }
 
 variable "gpu_node_disk_size" {
@@ -91,6 +96,7 @@ variable "scaler_release_name" {
 variable "scaler_image_repository" {
   description = "Override the scaler container image repository. Empty string uses the chart default (ghcr.io/pmady/keda-gpu-scaler)."
   type        = string
+  default     = "ghcr.io/pmady/keda-gpu-scaler"
 }
 
 variable "scaler_image_tag" {
@@ -108,4 +114,5 @@ variable "scaler_runtime_class_name" {
 variable "helm_timeout" {
   description = "Per-release Helm wait timeout in seconds. Generous because GPU driver/device-plugin rollout and node labelling can take several minutes."
   type        = number
+  default     = 1800
 }
