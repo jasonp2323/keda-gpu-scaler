@@ -50,28 +50,28 @@ No modules.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Name of the GKE cluster and the prefix used for the VPC and related resources. | `string` | n/a | yes |
+| <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Name of the GKE cluster and the prefix used for the VPC and related resources. | `string` | `"keda-gpu-scaler-test"` | no |
 | <a name="input_gpu_machine_type"></a> [gpu\_machine\_type](#input\_gpu\_machine\_type) | GPU node machine type. | `string` | `"n1-standard-4"` | no |
 | <a name="input_gpu_node_count"></a> [gpu\_node\_count](#input\_gpu\_node\_count) | Number of GPU nodes (fixed-size pool for predictable, low-cost integration testing). | `number` | `1` | no |
 | <a name="input_gpu_node_disk_size"></a> [gpu\_node\_disk\_size](#input\_gpu\_node\_disk\_size) | Root disk size (GiB) per GPU node; generous by default since GPU images + driver/CUDA layers are large. | `number` | `100` | no |
 | <a name="input_gpu_operator_chart_version"></a> [gpu\_operator\_chart\_version](#input\_gpu\_operator\_chart\_version) | NVIDIA GPU operator Helm chart version (repo https://helm.ngc.nvidia.com/nvidia). | `string` | `"v26.3.2"` | no |
 | <a name="input_gpu_per_node"></a> [gpu\_per\_node](#input\_gpu\_per\_node) | Number of GPUs attached per GPU node. | `number` | `1` | no |
 | <a name="input_gpu_type"></a> [gpu\_type](#input\_gpu\_type) | GPU accelerator type attached to the n1 GPU nodes. | `string` | `"nvidia-tesla-t4"` | no |
-| <a name="input_helm_timeout"></a> [helm\_timeout](#input\_helm\_timeout) | Per-release Helm timeout in seconds. Bounds the KEDA install wait and the graceful `helm uninstall` on destroy (the GPU operator teardown is slow). Keep it generous so a slow uninstall doesn't fail and strand the billing GPU node. | `number` | n/a | yes |
+| <a name="input_helm_timeout"></a> [helm\_timeout](#input\_helm\_timeout) | Per-release Helm timeout in seconds. Bounds the KEDA install wait and the graceful `helm uninstall` on destroy (the GPU operator teardown is slow). Keep it generous so a slow uninstall doesn't fail and strand the billing GPU node. | `number` | `1800` | no |
 | <a name="input_keda_chart_version"></a> [keda\_chart\_version](#input\_keda\_chart\_version) | KEDA Helm chart version (repo https://kedacore.github.io/charts). | `string` | `"2.20.1"` | no |
 | <a name="input_keda_namespace"></a> [keda\_namespace](#input\_keda\_namespace) | Namespace KEDA and the keda-gpu-scaler are installed into. | `string` | `"keda"` | no |
 | <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | GKE control plane minimum version (<major>.<minor>); must be currently offered in your zone/release channel. | `string` | `"1.34"` | no |
-| <a name="input_labels"></a> [labels](#input\_labels) | Extra labels merged into the default labels applied to every resource (e.g. an owner or expiry date). | `map(string)` | n/a | yes |
+| <a name="input_labels"></a> [labels](#input\_labels) | Extra labels merged into the default labels applied to every resource (e.g. an owner or expiry date). | `map(string)` | `{}` | no |
 | <a name="input_pods_cidr"></a> [pods\_cidr](#input\_pods\_cidr) | IPv4 CIDR block for the subnet's secondary range used for Pod IPs (VPC-native/alias IP). | `string` | `"10.4.0.0/14"` | no |
 | <a name="input_project_id"></a> [project\_id](#input\_project\_id) | GCP project ID to deploy the test cluster into. | `string` | n/a | yes |
-| <a name="input_region"></a> [region](#input\_region) | GCP region for the network/subnet. Pick one with GPU quota. | `string` | n/a | yes |
-| <a name="input_scaler_image_repository"></a> [scaler\_image\_repository](#input\_scaler\_image\_repository) | Override the scaler image repository; empty string uses the chart default (ghcr.io/pmady/keda-gpu-scaler). | `string` | n/a | yes |
+| <a name="input_region"></a> [region](#input\_region) | GCP region for the network/subnet. Pick one with GPU quota. | `string` | `"us-west4"` | no |
+| <a name="input_scaler_image_repository"></a> [scaler\_image\_repository](#input\_scaler\_image\_repository) | Override the scaler image repository; empty string uses the chart default (ghcr.io/pmady/keda-gpu-scaler). | `string` | `"ghcr.io/pmady/keda-gpu-scaler"` | no |
 | <a name="input_scaler_image_tag"></a> [scaler\_image\_tag](#input\_scaler\_image\_tag) | Scaler container image tag to deploy. The chart appVersion has no published image, so pin a real tag (a vX.Y.Z release or `latest`). | `string` | `"v0.5.0"` | no |
 | <a name="input_scaler_release_name"></a> [scaler\_release\_name](#input\_scaler\_release\_name) | Helm release name for the in-tree keda-gpu-scaler chart. Also determines the in-cluster service name / gRPC endpoint. | `string` | `"keda-gpu-scaler"` | no |
 | <a name="input_scaler_runtime_class_name"></a> [scaler\_runtime\_class\_name](#input\_scaler\_runtime\_class\_name) | Override the scaler pod's runtimeClassName; null uses the chart default ('nvidia'). | `string` | `null` | no |
 | <a name="input_services_cidr"></a> [services\_cidr](#input\_services\_cidr) | IPv4 CIDR block for the subnet's secondary range used for Service IPs (VPC-native/alias IP). | `string` | `"10.8.0.0/20"` | no |
 | <a name="input_subnet_cidr"></a> [subnet\_cidr](#input\_subnet\_cidr) | IPv4 CIDR block for the GKE subnet's primary (node) IP range. | `string` | `"10.0.0.0/20"` | no |
-| <a name="input_zone"></a> [zone](#input\_zone) | GCP zone the GKE cluster and GPU node pool run in (single zone, not regional, for predictable GPU cost/quota). | `string` | n/a | yes |
+| <a name="input_zone"></a> [zone](#input\_zone) | GCP zone the GKE cluster and GPU node pool run in (single zone, not regional, for predictable GPU cost/quota). | `string` | `"us-west4-b"` | no |
 
 ## Outputs
 
