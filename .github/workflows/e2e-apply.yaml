@@ -194,6 +194,7 @@ jobs:
           terraform -chdir=infra/terraform/aws destroy -auto-approve
 
   e2e-azure:
+    needs: resolve-tag
     if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'azure' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest
@@ -312,6 +313,7 @@ jobs:
           terraform -chdir=infra/terraform/azure destroy -auto-approve
 
   e2e-gcp:
+    needs: resolve-tag
     if: inputs.confirm_cost == 'apply' && (inputs.clouds == 'gcp' || inputs.clouds == 'all')
     timeout-minutes: 90
     runs-on: ubuntu-latest

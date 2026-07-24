@@ -25,7 +25,7 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "GKE control plane minimum version (<major>.<minor>); must be currently offered in your zone/release channel."
   type        = string
-  default     = "1.33"
+  default     = "1.34"
 }
 
 variable "subnet_cidr" {
