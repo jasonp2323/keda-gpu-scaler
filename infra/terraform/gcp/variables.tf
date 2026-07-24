@@ -10,16 +10,19 @@ variable "project_id" {
 variable "region" {
   description = "GCP region for the network/subnet. Pick one with GPU quota."
   type        = string
+  default     = "us-west4"
 }
 
 variable "zone" {
   description = "GCP zone the GKE cluster and GPU node pool run in (single zone, not regional, for predictable GPU cost/quota)."
   type        = string
+  default     = "us-west4-b"
 }
 
 variable "cluster_name" {
   description = "Name of the GKE cluster and the prefix used for the VPC and related resources."
   type        = string
+  default     = "keda-gpu-scaler-test"
 }
 
 variable "kubernetes_version" {
@@ -49,6 +52,7 @@ variable "services_cidr" {
 variable "labels" {
   description = "Extra labels merged into the default labels applied to every resource (e.g. an owner or expiry date)."
   type        = map(string)
+  default     = {}
 }
 
 ###############################################################################
@@ -116,6 +120,7 @@ variable "scaler_release_name" {
 variable "scaler_image_repository" {
   description = "Override the scaler image repository; empty string uses the chart default (ghcr.io/pmady/keda-gpu-scaler)."
   type        = string
+  default     = "ghcr.io/pmady/keda-gpu-scaler"
 }
 
 variable "scaler_image_tag" {
@@ -133,4 +138,5 @@ variable "scaler_runtime_class_name" {
 variable "helm_timeout" {
   description = "Per-release Helm timeout in seconds. Bounds the KEDA install wait and the graceful `helm uninstall` on destroy (the GPU operator teardown is slow). Keep it generous so a slow uninstall doesn't fail and strand the billing GPU node."
   type        = number
+  default     = 1800
 }

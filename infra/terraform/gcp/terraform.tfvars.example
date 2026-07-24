@@ -1,6 +1,9 @@
+# project_id is required; every other variable has a sensible default, so
+# override only what you need.
+
 project_id         = "my-gcp-project"
-region             = "us-central1"
-zone               = "us-central1-a"
+region             = "us-west4"
+zone               = "us-west4-b"
 cluster_name       = "keda-gpu-scaler-test"
 kubernetes_version = "1.34"
 gpu_machine_type   = "n1-standard-4"
