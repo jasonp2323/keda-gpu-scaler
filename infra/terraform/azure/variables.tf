@@ -29,7 +29,7 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "AKS Kubernetes version (<major>.<minor>; AKS selects the latest patch). Defaults to a current in-support minor validated end-to-end; 1.34/1.35 are also in support. Never default to a near-EOL minor."
   type        = string
-  default     = "1.33"
+  default     = "1.34"
 }
 
 variable "tags" {
