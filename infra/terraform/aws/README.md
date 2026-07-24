@@ -46,22 +46,22 @@ edit it by hand.
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Name of the EKS cluster and the prefix used for the VPC and related resources. | `string` | n/a | yes |
+| <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Name of the EKS cluster and the prefix used for the VPC and related resources. | `string` | `"keda-gpu-scaler-test"` | no |
 | <a name="input_gpu_ami_type"></a> [gpu\_ami\_type](#input\_gpu\_ami\_type) | EKS-optimized Amazon Linux 2023 with NVIDIA hsot driver | `string` | `"AL2023_x86_64_NVIDIA"` | no |
-| <a name="input_gpu_instance_type"></a> [gpu\_instance\_type](#input\_gpu\_instance\_type) | GPU instance type | `string` | n/a | yes |
-| <a name="input_gpu_node_count"></a> [gpu\_node\_count](#input\_gpu\_node\_count) | Number of GPU nodes. Fixed-size on-demand pool (min = max = desired). Kept at 1 for predictable, low-cost integration testing. | `number` | n/a | yes |
+| <a name="input_gpu_instance_type"></a> [gpu\_instance\_type](#input\_gpu\_instance\_type) | GPU instance type | `string` | `"g5.xlarge"` | no |
+| <a name="input_gpu_node_count"></a> [gpu\_node\_count](#input\_gpu\_node\_count) | Number of GPU nodes. Fixed-size on-demand pool (min = max = desired). Kept at 1 for predictable, low-cost integration testing. | `number` | `1` | no |
 | <a name="input_gpu_node_disk_size"></a> [gpu\_node\_disk\_size](#input\_gpu\_node\_disk\_size) | Root EBS volume size (GiB) per GPU node. GPU container images plus the driver/CUDA layers are large, so this is generous by default. | `number` | `100` | no |
 | <a name="input_gpu_operator_chart_version"></a> [gpu\_operator\_chart\_version](#input\_gpu\_operator\_chart\_version) | NVIDIA GPU operator Helm chart version (repo https://helm.ngc.nvidia.com/nvidia). | `string` | `"v26.3.2"` | no |
-| <a name="input_helm_timeout"></a> [helm\_timeout](#input\_helm\_timeout) | Per-release Helm wait timeout in seconds. Generous because GPU driver/device-plugin rollout and node labelling can take several minutes. | `number` | n/a | yes |
+| <a name="input_helm_timeout"></a> [helm\_timeout](#input\_helm\_timeout) | Per-release Helm wait timeout in seconds. Generous because GPU driver/device-plugin rollout and node labelling can take several minutes. | `number` | `1800` | no |
 | <a name="input_keda_chart_version"></a> [keda\_chart\_version](#input\_keda\_chart\_version) | KEDA Helm chart version (repo https://kedacore.github.io/charts). | `string` | `"2.20.1"` | no |
 | <a name="input_keda_namespace"></a> [keda\_namespace](#input\_keda\_namespace) | Namespace KEDA and the keda-gpu-scaler are installed into. | `string` | `"keda"` | no |
 | <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | EKS Kubernetes control plane version (<major>.<minor>). Latest on EKS is 1.36; pick a version still in standard support. | `string` | `"1.34"` | no |
-| <a name="input_region"></a> [region](#input\_region) | AWS region to deploy the test cluster into. Pick one with GPU capacity (and where you hold the GPU service quota). | `string` | n/a | yes |
-| <a name="input_scaler_image_repository"></a> [scaler\_image\_repository](#input\_scaler\_image\_repository) | Override the scaler container image repository. Empty string uses the chart default (ghcr.io/pmady/keda-gpu-scaler). | `string` | n/a | yes |
+| <a name="input_region"></a> [region](#input\_region) | AWS region to deploy the test cluster into. Pick one with GPU capacity (and where you hold the GPU service quota). | `string` | `"us-east-2"` | no |
+| <a name="input_scaler_image_repository"></a> [scaler\_image\_repository](#input\_scaler\_image\_repository) | Override the scaler container image repository. Empty string uses the chart default (ghcr.io/pmady/keda-gpu-scaler). | `string` | `"ghcr.io/pmady/keda-gpu-scaler"` | no |
 | <a name="input_scaler_image_tag"></a> [scaler\_image\_tag](#input\_scaler\_image\_tag) | Scaler container image tag to deploy | `string` | `"v0.5.0"` | no |
 | <a name="input_scaler_release_name"></a> [scaler\_release\_name](#input\_scaler\_release\_name) | Helm release name for the in-tree keda-gpu-scaler chart. Also determines the in-cluster service name / gRPC endpoint. | `string` | `"keda-gpu-scaler"` | no |
 | <a name="input_scaler_runtime_class_name"></a> [scaler\_runtime\_class\_name](#input\_scaler\_runtime\_class\_name) | Override the scaler pod's runtimeClassName. null uses the chart default ('nvidia') | `string` | `null` | no |
-| <a name="input_tags"></a> [tags](#input\_tags) | Extra tags merged into the default tags applied to every resource (e.g. an owner or expiry date). | `map(string)` | n/a | yes |
+| <a name="input_tags"></a> [tags](#input\_tags) | Extra tags merged into the default tags applied to every resource (e.g. an owner or expiry date). | `map(string)` | `{}` | no |
 | <a name="input_vpc_cidr"></a> [vpc\_cidr](#input\_vpc\_cidr) | IPv4 CIDR block. | `string` | `"10.0.0.0/16"` | no |
 
 ## Outputs
