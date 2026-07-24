@@ -55,7 +55,7 @@ edit it by hand.
 | <a name="input_helm_timeout"></a> [helm\_timeout](#input\_helm\_timeout) | Per-release Helm wait timeout in seconds. Generous because GPU driver/device-plugin rollout and node labelling can take several minutes. | `number` | n/a | yes |
 | <a name="input_keda_chart_version"></a> [keda\_chart\_version](#input\_keda\_chart\_version) | KEDA Helm chart version (repo https://kedacore.github.io/charts). | `string` | `"2.20.1"` | no |
 | <a name="input_keda_namespace"></a> [keda\_namespace](#input\_keda\_namespace) | Namespace KEDA and the keda-gpu-scaler are installed into. | `string` | `"keda"` | no |
-| <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | EKS Kubernetes control plane version (<major>.<minor>). Latest on EKS is 1.36; pick a version still in standard support. | `string` | `"1.33"` | no |
+| <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | EKS Kubernetes control plane version (<major>.<minor>). Latest on EKS is 1.36; pick a version still in standard support. | `string` | `"1.34"` | no |
 | <a name="input_region"></a> [region](#input\_region) | AWS region to deploy the test cluster into. Pick one with GPU capacity (and where you hold the GPU service quota). | `string` | n/a | yes |
 | <a name="input_scaler_image_repository"></a> [scaler\_image\_repository](#input\_scaler\_image\_repository) | Override the scaler container image repository. Empty string uses the chart default (ghcr.io/pmady/keda-gpu-scaler). | `string` | n/a | yes |
 | <a name="input_scaler_image_tag"></a> [scaler\_image\_tag](#input\_scaler\_image\_tag) | Scaler container image tag to deploy | `string` | `"v0.5.0"` | no |
