@@ -372,6 +372,13 @@ jobs:
           sudo apt-get install -y google-cloud-cli-gke-gcloud-auth-plugin
           gke-gcloud-auth-plugin --version
 
+      # gke-gcloud-auth-plugin mints its token via `gcloud config config-helper`, which
+      # needs an *active* gcloud account. The WIF auth step sets ADC but never runs
+      # `gcloud auth login`, so config-helper fails with "no active account". Activate
+      # the same WIF credential file as the active gcloud account.
+      - name: Activate gcloud credentials for kubectl
+        run: gcloud auth login --quiet --cred-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+
       - name: Set up Infracost (GCP)
         continue-on-error: true
         uses: infracost/actions/setup@fb736a8f219195d6efdca58682069b16fe1bc280 # v4.2.0
