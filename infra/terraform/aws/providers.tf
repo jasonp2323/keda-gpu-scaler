@@ -7,14 +7,10 @@ provider "aws" {
   }
 }
 
-# The Kubernetes and Helm providers authenticate to the freshly created EKS
-# cluster using the AWS CLI's `eks get-token` exec credential plugin. Tokens are
-# short-lived and refreshed on every Terraform operation, so nothing needs to be
-# written to ~/.kube/config for `apply` to work.
-#
-# Requirements on the machine running Terraform:
-#   - awscli v2 on PATH (for `aws eks get-token`)
-#   - valid AWS credentials for the same account/region as the cluster
+# Kubernetes/Helm providers authenticate via the AWS CLI's `eks get-token` exec
+# plugin — tokens are short-lived and refreshed per operation, so nothing is
+# written to ~/.kube/config. Requires awscli v2 on PATH and valid AWS
+# credentials for the cluster's account/region.
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
@@ -26,10 +22,9 @@ provider "kubernetes" {
   }
 }
 
-# Helm provider v3 takes its Kubernetes connection settings as an attribute
-# object (`kubernetes = { ... }`), and `exec` is likewise an attribute object —
-# this differs from the Kubernetes provider above, which still uses an `exec {}`
-# block. See the v2 -> v3 upgrade guide.
+# Helm provider v3 takes Kubernetes connection settings as an attribute object
+# (`kubernetes = { ... }`, `exec = { ... }`), unlike the Kubernetes provider's
+# `exec {}` block above. See the v2 -> v3 upgrade guide.
 provider "helm" {
   kubernetes = {
     host                   = module.eks.cluster_endpoint

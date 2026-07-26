@@ -40,10 +40,8 @@ resource "helm_release" "keda_gpu_scaler" {
   wait    = true
   timeout = var.helm_timeout
 
-  # The chart renders a KEDA ScaledObject (needs the KEDA CRDs), and its
-  # DaemonSet pod selects the `nvidia.com/gpu.present` label and the `nvidia`
-  # RuntimeClass that the GPU operator provisions — so both must be in place
-  # first or the pod stays Pending and the release times out.
+  # Needs KEDA's CRDs (for the ScaledObject) and the GPU operator's node
+  # label/RuntimeClass (for the DaemonSet pod), or the pod stays Pending.
   depends_on = [
     helm_release.keda,
     helm_release.gpu_operator,
