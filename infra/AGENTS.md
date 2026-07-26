@@ -1,3 +1,9 @@
+# Important
+Keep comments short and concise, you're writing not a novel, and you're not writing for an audience
+that needs to learn every nuanced details of your code. You're writing comments for a developer audience,
+not a bunch of kids in computer science school. Keep the comments to one to three sentences max. If something
+looks like it "might" need a comment, don't even bother.
+
 # AGENTS.md — `infra/` guidance
 
 Guidance for humans and AI agents working on the Infrastructure-as-Code in this
