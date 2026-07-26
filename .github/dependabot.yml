@@ -4,11 +4,21 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+  # Separate module for the Terratest e2e suite — keeps its (large, test-only)
+  # dependency tree patched so the vuln scan stays green.
+  - package-ecosystem: "gomod"
+    directory: "/tests/terratest"
+    schedule:
+      interval: "weekly"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
   - package-ecosystem: "docker"
     directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/docs"
     schedule:
       interval: "weekly"
