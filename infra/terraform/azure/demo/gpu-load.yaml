@@ -1,11 +1,10 @@
-# Drives the GPU to ~100% utilization for a couple of minutes so you can watch
-# KEDA scale `demo-app` up. It requests one GPU (nvidia.com/gpu: 1), which the
-# minikube nvidia-device-plugin advertises.
+# Drives the GPU to ~100% utilization for a couple of minutes so KEDA scales
+# `demo-app` up. Requests one GPU (nvidia.com/gpu: 1), advertised by the
+# minikube nvidia-device-plugin.
 #
-# NOTE: the image below is a community "gpu-burn" image. If it's unavailable or
-# you'd rather use your own GPU workload, swap `image`/`args` for anything that
-# keeps the GPU busy — the scaler reads utilization globally, so any GPU load
-# works.
+# NOTE: gpu-burn is a community image; swap `image`/`args` for any GPU
+# workload if it's unavailable — the scaler reads GPU utilization globally, so
+# any load works.
 apiVersion: batch/v1
 kind: Job
 metadata:

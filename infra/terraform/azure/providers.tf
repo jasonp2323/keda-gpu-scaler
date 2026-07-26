@@ -6,14 +6,11 @@ provider "azurerm" {
   features {}
 }
 
-# The Kubernetes and Helm providers authenticate to the freshly created AKS
-# cluster using the admin kubeconfig that azurerm exports from the cluster
-# resource (host + client cert/key + CA). These are read straight from state, so
-# nothing needs to be written to ~/.kube/config for `apply` to work.
-#
-# This relies on the cluster's local admin account (local_account_disabled =
-# false, the default). The `az` CLI is NOT required by Terraform itself — only
-# to fetch a kubeconfig afterwards (see the configure_kubectl output).
+# Kubernetes and Helm authenticate to the new AKS cluster using the admin
+# kubeconfig azurerm exports from the cluster resource, read straight from
+# state — nothing needs writing to ~/.kube/config. Relies on the cluster's
+# local admin account (local_account_disabled = false, the default); the `az`
+# CLI is only needed afterwards to fetch a kubeconfig (see configure_kubectl).
 provider "kubernetes" {
   host                   = azurerm_kubernetes_cluster.this.kube_config[0].host
   client_certificate     = base64decode(azurerm_kubernetes_cluster.this.kube_config[0].client_certificate)

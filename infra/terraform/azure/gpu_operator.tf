@@ -1,36 +1,59 @@
-# NVIDIA GPU operator.
+# NVIDIA GPU operator. driver.enabled = false since AKS already installs the
+# host driver (gpu_driver = "Install" in main.tf), mirroring the EKS AMI's
+# driver. toolkit.enabled stays true because, unlike the EKS AMI, AKS doesn't
+# register a named `nvidia` containerd runtime — the toolkit supplies that
+# runtime and the `nvidia` RuntimeClass, plus the device plugin and NFD/GFD's
+# `nvidia.com/gpu.present` node label.
 #
-# The GPU node pool is created with gpu_driver = "None" (see main.tf), so AKS
-# installs NO GPU software. The operator therefore owns the entire stack — the
-# opposite split from the EKS sibling, where the AL2023 NVIDIA AMI already ships
-# the driver/toolkit so the operator only adds the device plugin. Here we let
-# the operator provide:
-#   - the NVIDIA host driver (driver.enabled = true),
-#   - the NVIDIA container toolkit, which configures containerd's `nvidia`
-#     runtime handler the `nvidia` RuntimeClass points at (toolkit.enabled = true),
-#   - the NVIDIA k8s device plugin (advertises nvidia.com/gpu),
-#   - node-feature-discovery + GPU-feature-discovery, which apply the
-#     `nvidia.com/gpu.present=true` node label the scaler's nodeSelector targets,
-#   - DCGM / dcgm-exporter,
-#   - the `nvidia` RuntimeClass referenced by the scaler pod template.
-#
-# This is NVIDIA's documented approach for AKS (skip the AKS driver, run the
-# operator): https://learn.microsoft.com/azure/aks/nvidia-gpu-operator
+# https://learn.microsoft.com/azure/aks/nvidia-gpu-operator
+
+# Some managed clusters gate system-node-critical/system-cluster-critical pods
+# behind a ResourceQuota; create the namespace + quota before the operator so its
+# controllers and NFD are admitted (mirrors the GCP stack).
+resource "kubernetes_namespace_v1" "gpu_operator" {
+  metadata {
+    name = "gpu-operator"
+  }
+
+  depends_on = [azurerm_kubernetes_cluster.this]
+}
+
+resource "kubernetes_resource_quota_v1" "gpu_operator_critical" {
+  metadata {
+    name      = "gpu-operator-critical-pods"
+    namespace = kubernetes_namespace_v1.gpu_operator.metadata[0].name
+  }
+
+  spec {
+    hard = {
+      pods = "100"
+    }
+
+    scope_selector {
+      match_expression {
+        scope_name = "PriorityClass"
+        operator   = "In"
+        values     = ["system-node-critical", "system-cluster-critical"]
+      }
+    }
+  }
+}
+
 resource "helm_release" "gpu_operator" {
   name             = "gpu-operator"
-  namespace        = "gpu-operator"
-  create_namespace = true
+  namespace        = kubernetes_namespace_v1.gpu_operator.metadata[0].name
+  create_namespace = false
 
   repository = "https://helm.ngc.nvidia.com/nvidia"
   chart      = "gpu-operator"
   version    = var.gpu_operator_chart_version
 
-  # Both are the operator defaults; set explicitly to document that on AKS the
-  # operator — not the node image — installs the driver and toolkit.
+  # Host driver already installed; toolkit.enabled adds the `nvidia` containerd
+  # runtime + RuntimeClass that AKS doesn't register itself.
   set = [
     {
       name  = "driver.enabled"
-      value = "true"
+      value = "false"
     },
     {
       name  = "toolkit.enabled"
@@ -38,10 +61,13 @@ resource "helm_release" "gpu_operator" {
     },
   ]
 
-  # Driver build + device-plugin/GFD rollout and node labelling can take several
-  # minutes after the node joins.
+  # No driver build now — just the toolkit + device-plugin/GFD rollout and node
+  # labelling, a couple of minutes after the node joins.
   wait    = true
   timeout = var.helm_timeout
 
-  depends_on = [azurerm_kubernetes_cluster.this]
+  depends_on = [
+    azurerm_kubernetes_cluster.this,
+    kubernetes_resource_quota_v1.gpu_operator_critical,
+  ]
 }
