@@ -1,0 +1,16 @@
+project_id        = "my-gcp-project"
+region            = "us-central1"
+github_repository = "jasonp2323/keda-gpu-scaler"
+
+# Bucket names are globally unique across all of GCS — pick something
+# project/org-specific.
+state_bucket_name = "my-gcp-project-keda-gpu-scaler-tfstate"
+
+pool_id            = "keda-gpu-scaler-pool"
+provider_id        = "keda-gpu-scaler-provider"
+service_account_id = "keda-gpu-scaler-e2e"
+
+# Set to false to reference an existing pool/provider (matching pool_id /
+# provider_id) instead of creating one — e.g. it already exists, or GCP is
+# still soft-deleting a same-id pool from a previous `destroy` (<30 days).
+# create_workload_identity_pool = false
