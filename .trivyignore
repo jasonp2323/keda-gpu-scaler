@@ -1,0 +1,33 @@
+# Trivy misconfig baseline for infra/terraform (the `trivy` gate in
+# .github/workflows/infra-validate.yaml runs `trivy config` at HIGH,CRITICAL).
+#
+# These stacks provision throwaway, deliberately PUBLIC, cheap GPU *test* clusters
+# (see infra/AGENTS.md) — not production. The findings below are production-hardening
+# controls that either don't apply to public ephemeral test infra or would change the
+# design fundamentally (private clusters, CMKs, API IP allow-lists — which CI's
+# dynamic-egress-IP runners can't use anyway). Fix a finding instead of ignoring it
+# when it's cheap and design-neutral; keep this list curated, not a blanket disable.
+
+# Public cluster API endpoints — intentional: CI runners have dynamic egress IPs and
+# must reach the API server, so private endpoints / authorized-network CIDRs aren't usable.
+AVD-AWS-0040
+AVD-AWS-0041
+AVD-AZU-0041
+AVD-GCP-0061
+
+# EKS community-module node-group defaults (not our code): outbound egress for image /
+# control-plane pulls, and the module's launch-template IMDS setting.
+AVD-AWS-0104
+AVD-AWS-0130
+
+# Remote-state bucket uses AES256 SSE, sufficient for throwaway test state; a
+# customer-managed KMS key is needless cost/rotation overhead here.
+AVD-AWS-0132
+
+# Minimal throwaway AKS/GKE test cluster — extra hardening deliberately omitted
+# (RBAC and legacy-endpoint concealment are already on by default; network policy and
+# Workload-Identity metadata concealment add setup a throwaway cluster doesn't need).
+AVD-AZU-0042
+AVD-AZU-0043
+AVD-GCP-0048
+AVD-GCP-0057
