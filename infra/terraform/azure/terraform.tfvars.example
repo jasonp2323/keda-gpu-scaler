@@ -8,7 +8,7 @@
 location            = "eastus"
 cluster_name        = "keda-gpu-scaler-test"
 resource_group_name = "keda-gpu-scaler-test-rg"
-kubernetes_version  = "1.33"
+kubernetes_version  = "1.34"
 gpu_vm_size    = "Standard_NC4as_T4_v3"
 gpu_node_count = 1
 helm_timeout   = 1800

@@ -29,7 +29,7 @@ variable "cluster_name" {
 variable "kubernetes_version" {
   description = "AKS Kubernetes version (<major>.<minor>; AKS selects the latest patch). Defaults to a current in-support minor validated end-to-end; 1.34/1.35 are also in support. Never default to a near-EOL minor."
   type        = string
-  default     = "1.33"
+  default     = "1.34"
 }
 
 variable "tags" {
@@ -112,7 +112,7 @@ variable "scaler_runtime_class_name" {
 }
 
 variable "helm_timeout" {
-  description = "Per-release Helm wait timeout in seconds. Generous because on AKS the GPU operator also builds/installs the driver, which can take several minutes."
+  description = "Per-release Helm wait timeout in seconds. AKS installs the driver; this covers the operator's toolkit + device-plugin rollout and node labelling."
   type        = number
   default     = 900
 }

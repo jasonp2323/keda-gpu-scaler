@@ -23,16 +23,12 @@ resource "azurerm_resource_group" "this" {
 ###############################################################################
 # AKS control plane + single GPU node pool
 #
-# Hand-rolled on the azurerm `azurerm_kubernetes_cluster` resource rather than
-# the Azure/aks/azurerm community module (evaluated at v11.7.0). Two reasons:
-#   1. AKS — unlike EKS — manages its own VNet, so there is no networking module
-#      to lean on; the native resource IS the minimal path.
-#   2. The module only exposes `gpu_driver` on extra `node_pools`, not on the
-#      system/default pool, which would force a 2-pool (system + GPU) design.
-#      Here we make the *default* pool the GPU pool with `gpu_driver = "None"`,
-#      so a single untainted node runs the whole stack (operator, KEDA, CoreDNS
-#      and the scaler) — the cheapest layout and a direct mirror of the EKS
-#      sibling's single untainted GPU node group.
+# Hand-rolled on azurerm_kubernetes_cluster instead of the Azure/aks/azurerm
+# module (v11.7.0): AKS manages its own VNet so there's no networking module to
+# lean on, and the module only exposes gpu_driver on extra node_pools, not the
+# default pool, forcing a 2-pool design. Making the default pool the GPU pool
+# (gpu_driver = "Install") keeps a single untainted node running the whole
+# stack, mirroring the EKS sibling's single GPU node group.
 ###############################################################################
 
 resource "azurerm_kubernetes_cluster" "this" {
@@ -52,11 +48,10 @@ resource "azurerm_kubernetes_cluster" "this" {
 
     os_disk_size_gb = var.gpu_node_disk_size
 
-    # Skip AKS's built-in NVIDIA driver so the GPU operator owns the full stack
-    # (driver + container toolkit + device plugin + GFD label + `nvidia`
-    # RuntimeClass). This is NVIDIA's documented AKS path and gives the scaler
-    # chart everything it needs unchanged. See gpu_operator.tf.
-    gpu_driver = "None"
+    # AKS installs a prebuilt driver (no runtime kernel build), mirroring the
+    # EKS AL2023 NVIDIA AMI. The GPU operator only adds k8s-facing pieces
+    # (gpu_operator.tf).
+    gpu_driver = "Install"
 
     # Lets vm_size / os_disk overrides roll a fresh pool instead of failing.
     temporary_name_for_rotation = "tmpgpu"
@@ -67,11 +62,10 @@ resource "azurerm_kubernetes_cluster" "this" {
 
     tags = local.tags
 
-    # NOTE: intentionally the (untainted) default/system pool. KEDA, the GPU
-    # operator controllers and CoreDNS schedule on the GPU node alongside the
-    # scaler. The scaler chart tolerates `nvidia.com/gpu` regardless, so tainting
-    # later is safe for the scaler but would strand system pods unless you add a
-    # separate CPU pool.
+    # NOTE: intentionally the untainted default/system pool, so KEDA, the GPU
+    # operator and CoreDNS schedule alongside the scaler on the one GPU node.
+    # Tainting it later is safe for the scaler but strands system pods unless
+    # you add a separate CPU pool.
   }
 
   identity {
