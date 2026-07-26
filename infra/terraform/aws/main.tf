@@ -39,9 +39,8 @@ module "vpc" {
   private_subnets = [for i in range(length(local.azs)) : cidrsubnet(var.vpc_cidr, 4, i)]
   public_subnets  = [for i in range(length(local.azs)) : cidrsubnet(var.vpc_cidr, 8, i + 48)]
 
-  # Nodes live in private subnets and reach the internet (image pulls, the
-  # NVIDIA NGC helm repo, etc.) via a single shared NAT gateway. One NAT gateway
-  # keeps the test cluster cheap; it is not HA, which is fine for a throwaway.
+  # Nodes reach the internet (image pulls, NGC helm repo) via a single shared
+  # NAT gateway — cheap, not HA, fine for a throwaway cluster.
   enable_nat_gateway   = true
   single_nat_gateway   = true
   enable_dns_hostnames = true
@@ -75,11 +74,9 @@ module "eks" {
   # the same apply.
   enable_cluster_creator_admin_permissions = true
 
-  # Core EKS-managed add-ons. Without these the cluster has NO pod networking,
-  # so nodes never reach Ready and the node group fails with
-  # "NodeCreationFailure: Unhealthy nodes". vpc-cni (and the pod identity agent)
-  # must be installed BEFORE the node group joins — hence before_compute = true;
-  # coredns/kube-proxy can settle once nodes exist.
+  # Core EKS-managed add-ons. Without vpc-cni, nodes never reach Ready
+  # ("NodeCreationFailure: Unhealthy nodes"), so it (and the pod identity
+  # agent) must install before the node group joins (before_compute = true).
   addons = {
     vpc-cni                = { before_compute = true }
     eks-pod-identity-agent = { before_compute = true }
@@ -107,11 +104,9 @@ module "eks" {
         "keda-gpu-scaler.io/pool" = "gpu"
       }
 
-      # NOTE: intentionally NOT tainted. This is a single-pool cluster, so KEDA,
-      # the GPU operator controllers and CoreDNS must be able to schedule on the
-      # GPU node too. The scaler chart tolerates `nvidia.com/gpu` regardless, so
-      # adding a taint here later is safe for the scaler but would strand the
-      # system/add-on pods unless you also add a separate CPU node group.
+      # Intentionally NOT tainted: this is a single-pool cluster, so KEDA, the
+      # GPU operator, and CoreDNS must also schedule here. Add a taint only
+      # alongside a separate CPU node group.
     }
   }
 }

@@ -1,19 +1,7 @@
-# NVIDIA GPU operator.
-#
-# The AL2023 NVIDIA AMI (var.gpu_ami_type default) already ships the host
-# driver, CUDA user-mode driver and the NVIDIA container toolkit, and
-# containerd is preconfigured with the `nvidia` runtime. So we disable the
-# operator's driver and toolkit components and let it provide only what the AMI
-# does not:
-#   - the NVIDIA k8s device plugin (advertises nvidia.com/gpu),
-#   - node-feature-discovery + GPU-feature-discovery, which apply the
-#     `nvidia.com/gpu.present=true` node label the scaler's nodeSelector
-#     targets,
-#   - DCGM / dcgm-exporter,
-#   - the `nvidia` RuntimeClass referenced by the scaler pod template.
-#
-# If you switch to a non-NVIDIA AMI (e.g. plain AL2023), set driver.enabled=true
-# so the operator installs the driver itself.
+# NVIDIA GPU operator. The AL2023 NVIDIA AMI already ships the driver and
+# container toolkit, so those are disabled here — the operator only adds the
+# device plugin, node labelling, DCGM, and the `nvidia` RuntimeClass. Using a
+# non-NVIDIA AMI instead? Set driver.enabled=true so it installs the driver.
 resource "helm_release" "gpu_operator" {
   name             = "gpu-operator"
   namespace        = "gpu-operator"
