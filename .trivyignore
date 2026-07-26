@@ -1,0 +1,13 @@
+# Trivy ignore file for infra/terraform (wired into .github/workflows/infra-validate.yaml).
+#
+# These stacks provision throwaway, public, cheap GPU *test* clusters (see
+# infra/AGENTS.md) — not production. Entries here should be misconfigs that are
+# intentionally N/A for that context (e.g. production-hardening policies that
+# don't apply to ephemeral test infra, or would add cost/scope the design
+# deliberately rejects). Fix a finding instead of ignoring it when it's cheap
+# and sensible — this file is a curated baseline, not a blanket suppression.
+#
+# Left empty for now: the first CI run against `aquasec/trivy:0.58.1 config`
+# reveals what, if anything, needs suppressing at HIGH/CRITICAL severity.
+# Add entries as `AVD-...` / `CKV_..._...` IDs with a one-line reason once real
+# findings are triaged — do not pre-guess check IDs here.
