@@ -395,6 +395,61 @@ docker push your-registry/keda-gpu-scaler:v0.1.0
 
 ---
 
+## End-to-End GPU Tests
+
+`make test` runs the unit suite against a mock collector (no GPU needed). The
+**end-to-end** suite is different: it provisions a **real** GPU cluster on AWS
+EKS, Azure AKS, or Google GKE with [Terratest](https://terratest.gruntwork.io/),
+installs the NVIDIA GPU operator + KEDA + this scaler, asserts the demo app
+scales up under GPU load and back down when idle, then tears everything down.
+The stacks live in [`infra/terraform/`](infra/terraform/) and the Go suite in
+[`tests/terratest/`](tests/terratest/).
+
+> **⚠️ These tests provision real, billed GPU hardware** (~$0.55–1.20/hr per
+> cloud). They are **manual-only** and each per-cloud job is gated behind a
+> GitHub Environment so a reviewer must approve the spend before it runs.
+
+### Running from GitHub Actions
+
+Go to the repo's **Actions** tab and pick the workflow, then **Run workflow**:
+
+| Workflow | What it does | Inputs |
+|----------|--------------|--------|
+| **E2E Cloud Tests (Apply and Destroy)** | Provisions the cluster, asserts scale up/down, then destroys it. | `clouds`: `aws` \| `azure` \| `gcp` \| `all` · `confirm_cost`: type `apply` to confirm billing |
+| **E2E Plan (Manual)** | Credential-light `terraform plan` + Infracost estimate — no cluster, no billing. | `clouds`: which stack to plan |
+| **E2E Destroy (Manual)** | Safety net to tear down a cluster a failed run left behind. | `cloud` + exact `cluster_name` + type `destroy` |
+
+**Choosing clouds:** the `clouds` input on the apply workflow fans out to one
+job per cloud. Pick a single cloud to validate one provider, or `all` to run
+AWS, Azure, and GCP in parallel (each still needs its own reviewer approval and
+GPU quota).
+
+### Reading the results
+
+- **Green check** on the run = the full contract passed: the scaler DaemonSet
+  came up, the `ScaledObject` went `Ready`, the demo app scaled **1 → N** under
+  load and **N → 1** when idle.
+- Every run uploads an **`e2e-diagnostics-<cloud>-<run_id>`** artifact (via
+  `if: always()`) containing the `go test` log; on failure it also includes a
+  cluster dump (nodes, scaler pods/logs, ScaledObject, events).
+- The cluster auto-destroys, so to poke a live one, run the suite locally.
+
+### Running locally
+
+Requires the cloud CLI authenticated, a remote state backend (see each stack's
+`bootstrap/`), and GPU quota in your target region:
+
+```bash
+cd tests/terratest
+E2E_AWS_STATE_BUCKET=<bucket> \
+  go test -tags e2e_aws -v -timeout 90m -run TestAWSGPUScalerE2E ./...
+```
+
+Full prerequisites (OIDC/WIF federation, required secrets/variables, GPU quota
+per cloud) are documented in **[`tests/terratest/README.md`](tests/terratest/README.md)**.
+
+---
+
 ## How It Compares
 
 | | keda-gpu-scaler | dcgm-exporter + Prometheus | Custom Metrics API |
