@@ -1,11 +1,11 @@
-# NVIDIA GPU operator. Owns the driver + toolkit (GKE installs no GPU software —
-# gpu_driver_installation_config = INSTALLATION_DISABLED is set in main.tf); the
-# operator provides the device plugin, NFD/GFD labels, and the nvidia RuntimeClass.
-# DCGM is off — the scaler reads NVML directly.
+# NVIDIA GPU operator: owns the driver + toolkit since GKE installs none
+# (gpu_driver_installation_config = INSTALLATION_DISABLED in main.tf), and provides
+# the device plugin, NFD/GFD labels, and nvidia RuntimeClass. DCGM is off — the
+# scaler reads NVML directly.
 
-# GKE/AKS gate system-node-critical/system-cluster-critical behind a ResourceQuota;
-# without one in this namespace the operator + NFD pods are rejected at admission.
-# Create the namespace + quota before the operator installs.
+# GKE gates system-node-critical/system-cluster-critical pods behind a ResourceQuota;
+# without one here the operator + NFD pods get rejected at admission. Create the
+# namespace + quota before the operator installs.
 resource "kubernetes_namespace_v1" "gpu_operator" {
   metadata {
     name = "gpu-operator"
@@ -70,16 +70,14 @@ resource "helm_release" "gpu_operator" {
     { name = "dcgmExporter.enabled", value = "false" },
   ]
 
-  # wait=true: with the operator owning the driver on a single untainted pool the
-  # stack converges in ~20 min (well under helm_timeout), so apply returns only when
-  # the GPU stack is ready — no async race. Bump helm_timeout if a slow driver build
-  # needs more headroom.
+  # wait=true: the driver build converges in ~20 min on this single untainted pool
+  # (well under helm_timeout), so apply only returns once the GPU stack is ready.
+  # Bump helm_timeout if a driver build needs more time.
   wait = true
 
-  # Bounds the graceful `helm uninstall` on `terraform destroy`. The operator's CRD +
-  # webhook + operand-daemonset teardown is slow, and the default 5 min often trips
-  # "context deadline exceeded" — leaving the (billing) GPU node up. Generous so a
-  # slow-but-completing uninstall finishes; if it still hangs, see the README destroy note.
+  # Bounds the graceful `helm uninstall` on destroy. The operator's teardown is slow
+  # and the default 5 min often strands the (billing) GPU node; if it still hangs,
+  # see the README destroy note.
   timeout = var.helm_timeout
 
   depends_on = [
