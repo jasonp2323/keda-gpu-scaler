@@ -524,6 +524,21 @@ Contributions welcome — GPU autoscaling use cases, vendor support (AMD ROCm, I
  </picture>
 </a>
 
+## Citing
+
+If you use keda-gpu-scaler in your research or writing, please cite it via its DOI. Full citation metadata is in [CITATION.cff](CITATION.cff).
+
+```bibtex
+@software{madduri_keda_gpu_scaler,
+  author    = {Madduri, Pavan},
+  title     = {keda-gpu-scaler: GPU-aware autoscaling for Kubernetes from real hardware metrics},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.22866676},
+  url       = {https://doi.org/10.5281/zenodo.22866676}
+}
+```
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
