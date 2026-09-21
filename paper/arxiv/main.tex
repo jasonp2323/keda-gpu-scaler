@@ -262,6 +262,29 @@ components, keeps all state in memory rather than in a time-series database, and
 is configured through \texttt{ScaledObject} YAML rather than PromQL queries,
 scrape configs, and adapter rules.
 
+\section{Application: Agentic AI and Autonomous Networks}
+
+Beyond conventional inference serving, GPU scale-to-zero is valuable wherever
+demand is bursty and driven by discrete, high-severity events. Autonomous
+(``self-healing'') telecom networks are one such setting \cite{comsoc}. Agentic
+reasoning over a network failure requires loading multi-gigabyte foundation-model
+weights into device memory, which is prohibitively expensive to keep running
+continuously ``just in case'' an anomaly occurs. Two properties make standard HPA
+a poor fit here: reactive CPU thresholds incur a cold-start penalty that can
+breach sub-second service-level objectives, and hardware utilization is a
+misleading signal because a GPU can be busy on a trivial task while a critical
+event waits in the queue.
+
+Coupling event-driven activation---for example, the depth or severity of an
+anomaly queue drawn from the network data plane---with GPU scale-to-zero lets
+operators provision cognitive compute only during active reasoning and release it
+immediately afterward. This separates a lightweight, CPU-based observability
+control plane (the ``watchers'') from a GPU-backed execution plane (the
+``thinkers'') that defaults to zero instances, and reduces both cost and the
+idle-power carbon footprint. In this architecture \texttt{keda-gpu-scaler}
+supplies the GPU-aware activation signal that lets the orchestrator scale
+cognitive workloads on hardware state rather than on coarse CPU metrics.
+
 \section{Related Work}
 
 DCGM Exporter exposes NVIDIA DCGM metrics to Prometheus but requires the full
@@ -323,6 +346,11 @@ Operating Systems Principles (SOSP)}, 2023.
 
 \bibitem{hami} HAMi: Heterogeneous AI Computing Virtualization Middleware.
 \url{https://github.com/Project-HAMi/HAMi}
+
+\bibitem{comsoc} P. Madduri and A. L. Thakur. The Financial Trap of Autonomous
+Networks: Scaling Agentic AI in the Telecom Core. IEEE ComSoc Technology Blog,
+March 2026.
+\url{https://techblog.comsoc.org/2026/03/30/the-financial-trap-of-autonomous-networks-scaling-agentic-ai-in-the-telecom-core/}
 
 \end{thebibliography}
 
