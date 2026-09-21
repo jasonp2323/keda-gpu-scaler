@@ -8,6 +8,7 @@ type: software
 version: 1.0.1
 date-released: 2026-09-20
 license: Apache-2.0
+doi: 10.5281/zenodo.22866676
 url: "https://github.com/pmady/keda-gpu-scaler"
 repository-code: "https://github.com/pmady/keda-gpu-scaler"
 keywords:
