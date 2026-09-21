@@ -1,0 +1,329 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{fancyvrb}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\title{GPU-Aware Autoscaling in Cloud Native AI Infrastructure:\\
+A Node-Level Telemetry Approach with KEDA and NVML}
+
+\author{Pavan Madduri\\
+Independent Researcher\\
+\texttt{https://orcid.org/0009-0007-3795-7593}}
+
+\date{September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Kubernetes treats GPUs as opaque, countable resources: a pod is either allocated
+a device or it is not, with no notion of utilization, memory pressure, or thermal
+state. This is acceptable for CPU-bound services but a poor fit for AI inference,
+where a pod can report single-digit CPU usage while its GPU is fully saturated.
+The Horizontal Pod Autoscaler, which reacts to CPU and memory, therefore cannot
+scale GPU workloads on the signal that actually matters. The common workaround
+chains an exporter, Prometheus, a query language, and an adapter, which adds
+operational complexity and tens of seconds of metric latency. We describe
+\texttt{keda-gpu-scaler}, an open-source KEDA external scaler that reads GPU
+metrics directly from the NVIDIA Management Library (NVML) on each node and
+serves them to Kubernetes autoscaling over gRPC, removing the intermediate
+metrics pipeline. We explain why GPU support must run as a DaemonSet rather than
+inside the KEDA operator, present the architecture and scaling profiles for
+inference engines such as vLLM and Triton, and report production observations
+from a multi-node A100 cluster in which direct NVML reads reduced metric latency
+from the 15--30~s typical of the Prometheus pipeline to 2--4~s while supporting
+GPU scale-to-zero.
+\end{abstract}
+
+\section{Introduction}
+
+Running GPU workloads on Kubernetes exposes a gap in the platform's autoscaling
+story. The Horizontal Pod Autoscaler (HPA) observes CPU and memory. A large
+language model (LLM) serving pod can be handling hundreds of concurrent requests
+with its GPU fully saturated while reporting under 10\% CPU, and the HPA takes no
+action. The Vertical Pod Autoscaler does not address this either. KEDA
+\cite{keda} brings custom-metric scaling within reach, but the standard route to
+GPU metrics---an exporter feeding Prometheus, a PromQL query, and either a
+Prometheus adapter or KEDA's Prometheus scaler---adds latency and several
+components to operate.
+
+\texttt{keda-gpu-scaler} \cite{kgs} takes a different approach: it reads GPU
+metrics directly from NVML \cite{nvml} on each node and serves them to KEDA over
+gRPC, skipping the metrics pipeline. It runs as a DaemonSet that polls NVML on a
+short interval and implements KEDA's external scaler interface
+\cite{keda-extscaler}. It ships scaling profiles for inference and training
+workloads and handles multi-GPU nodes with configurable aggregation. This paper
+describes the problem, why native integration into KEDA is not viable, the
+architecture, and an evaluation based on production use.
+
+\section{The GPU Scaling Blind Spot}
+
+\subsection{Current state}
+Kubernetes models GPUs as extended resources (e.g., \texttt{nvidia.com/gpu}). A
+workload requests a count and the scheduler assigns devices. There is no
+supported way for an autoscaler to ask how busy a GPU is or how much device
+memory remains. To the HPA, an idle GPU and a saturated GPU are indistinguishable.
+
+\subsection{The metrics pipeline problem}
+The conventional path to GPU-based scaling chains multiple components, for
+example \texttt{DCGM Exporter $\rightarrow$ Prometheus $\rightarrow$ PromQL
+$\rightarrow$ Prometheus Adapter $\rightarrow$ HPA}, or a KEDA variant ending in
+KEDA's Prometheus scaler. This works but has drawbacks, summarized in
+Table~\ref{tab:pipeline}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{L{0.32\textwidth} L{0.58\textwidth}}
+\toprule
+\textbf{Problem} & \textbf{Impact} \\
+\midrule
+Metric latency & 15--30~s from GPU state change to scaling decision, from scrape intervals and aggregation \\
+Operational complexity & Five components to deploy, configure, and maintain \\
+PromQL fragility & Scaling logic encoded in query strings; no type safety, hard to test \\
+Single point of failure & A Prometheus outage stops GPU scaling \\
+Resource overhead & Prometheus retention, a per-node exporter, and an adapter deployment \\
+\bottomrule
+\end{tabular}
+\caption{Drawbacks of the conventional metrics-pipeline approach.}
+\label{tab:pipeline}
+\end{table}
+
+\subsection{Why this matters now}
+GPU workloads do not scale like CPU workloads. LLM inference has strict latency
+targets, so scaling late drops requests. Device memory, rather than compute, is
+often the bottleneck: engines such as vLLM \cite{vllm} pre-allocate a key-value
+(KV) cache, so memory pressure is the leading signal of queue growth. GPUs are
+also expensive, so over-provisioning a handful of accelerators can cost more than
+over-provisioning many CPU cores. Finally, idle development and batch inference
+endpoints should release GPUs entirely, which standard HPA cannot do for
+device-backed pods.
+
+\section{Why Native Integration Fails}
+
+Embedding GPU support directly in the KEDA operator is not viable, for three
+reasons.
+
+\paragraph{CGO constraint.} NVIDIA's Go bindings \cite{gonvml} call into
+\texttt{libnvidia-ml.so} through cgo. KEDA builds its operator with
+\texttt{CGO\_ENABLED=0} to ship static binaries; introducing a cgo dependency
+would break that build and release model.
+
+\paragraph{Node-level hardware access.} NVML reads GPU state through device files
+(\texttt{/dev/nvidiactl}, \texttt{/dev/nvidia0..N}) that exist only on the
+physical GPU node. The KEDA operator runs as a single centralized Deployment and
+has no access to devices on worker nodes. A DaemonSet is the appropriate pattern:
+each instance runs on a GPU node, mounts the device files, and reads metrics
+locally.
+
+\paragraph{Independent release cycle.} GPU tooling evolves quickly---new
+architectures, new inference servers, and new metrics such as Multi-Instance GPU
+(MIG) partitions. KEDA releases coordinate across many scalers, so shipping GPU
+changes on that cadence would be slow. A standalone component can iterate
+independently. This design was discussed in the KEDA project \cite{keda7538}.
+
+\section{Architecture}
+
+\subsection{Overview}
+The scaler runs as a DaemonSet on each GPU node and serves KEDA over gRPC:
+
+\begin{Verbatim}[fontsize=\small]
+GPU Node                                    KEDA Operator
++------------------------------+           +------------------+
+|  DaemonSet: keda-gpu-scaler  |           |                  |
+|                              |           |  ExternalScaler  |
+|  +------------+              |  gRPC     |  trigger config  |
+|  | NVML poller|--metrics-->  |--:6000--> |                  |
+|  | (2s loop)  |              |           |  -> HPA decision  |
+|  +------------+              |           |  -> scale up/down |
+|       ^                      |           +------------------+
+|  libnvidia-ml.so             |
+|  /dev/nvidia0..N             |
++------------------------------+
+\end{Verbatim}
+
+\subsection{Data flow}
+Each poll cycle (2~s by default) reads streaming-multiprocessor (SM) utilization,
+memory-controller utilization, device memory used and total, temperature, and
+power draw. Metrics are cached in memory with no disk or external store. When KEDA
+calls \texttt{GetMetrics} over gRPC, the scaler returns the requested metric using
+the aggregation method named in the \texttt{ScaledObject}, and KEDA feeds the
+value to the HPA for a scale up, down, or to-zero decision.
+
+\subsection{gRPC interface}
+The scaler implements four methods of KEDA's external scaler contract:
+\texttt{IsActive} (true when a metric exceeds the activation threshold, enabling
+scale-from-zero), \texttt{StreamIsActive} (a streaming form for push-based
+activation), \texttt{GetMetricSpec} (metric name and target for the HPA), and
+\texttt{GetMetrics} (the current value). Using gRPC and protobuf gives type
+safety, avoids PromQL string parsing, and keeps Prometheus out of the critical
+path.
+
+\subsection{Security model}
+The DaemonSet needs only read-only access to NVIDIA device files and no
+cluster-wide RBAC. The gRPC port is exposed as a ClusterIP Service and is not
+reachable outside the cluster. The optional Prometheus endpoint can be disabled.
+No secrets are required, and all NVML calls are read-only.
+
+\section{Scaling Profiles for AI Workloads}
+
+Rather than requiring operators to reason about what ``80\% GPU utilization''
+means for a given workload, the scaler provides profiles with sensible defaults
+(Table~\ref{tab:profiles}); any field can be overridden in the
+\texttt{ScaledObject}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{L{0.20\textwidth} L{0.20\textwidth} l l L{0.26\textwidth}}
+\toprule
+\textbf{Profile} & \textbf{Primary metric} & \textbf{Thr.} & \textbf{Act.} & \textbf{Rationale} \\
+\midrule
+\texttt{vllm-inference} & VRAM utilization & 80\% & 5\% & KV cache pressure tracks queue growth \\
+\texttt{triton-inference} & SM utilization & 75\% & 10\% & SM saturation degrades throughput \\
+\texttt{training} & SM utilization & 90\% & 0\% & Avoid killing checkpoints; no scale-to-zero \\
+\texttt{batch} & VRAM utilization & 70\% & 1\% & Aggressive scale-down to release GPUs \\
+\bottomrule
+\end{tabular}
+\caption{Default scaling profiles.}
+\label{tab:profiles}
+\end{table}
+
+\section{Multi-GPU Aggregation}
+
+On nodes with four or eight GPUs, per-device metrics must be reduced to a single
+value for KEDA. The scaler supports \texttt{max} (default; scale when any GPU
+hits threshold, best for inference where one hot device signals a latency
+problem), \texttt{avg} (best for training where devices should load evenly),
+\texttt{min} (conservative), \texttt{sum} (capacity-based), and the \texttt{p95}
+and \texttt{p99} percentiles.
+
+\section{NUMA-Aware GPU Scheduling}
+
+The scaler decides \emph{when} to add pods; where those pods land is a scheduling
+concern that affects performance. In a dual-socket server each GPU is wired to one
+NUMA node over PCIe. If a pod's CPU is placed on one NUMA node and its GPU on
+another, memory accesses cross the inter-socket link, adding latency that
+accumulates during model loading and inference. Topology-aware placement, which
+we contributed to the Volcano scheduler \cite{volcano,volcanopr}, discovers
+GPU-to-NUMA mappings and co-locates CPU and GPU on the same NUMA node. Combining
+the two---utilization-driven scaling from \texttt{keda-gpu-scaler} and
+topology-aware placement from Volcano---addresses both scaling and placement.
+
+\section{Evaluation}
+
+\subsection{Metric latency}
+Table~\ref{tab:latency} compares the end-to-end metric latency and component count
+of the pipeline approaches with the direct-NVML approach.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{L{0.42\textwidth} l l}
+\toprule
+\textbf{Approach} & \textbf{Metric latency} & \textbf{Components} \\
+\midrule
+DCGM $\rightarrow$ Prometheus $\rightarrow$ HPA & 15--30~s & 5 \\
+DCGM $\rightarrow$ Prometheus $\rightarrow$ KEDA & 10--20~s & 4 \\
+\texttt{keda-gpu-scaler} (direct NVML) & 2--4~s & 2 \\
+\bottomrule
+\end{tabular}
+\caption{Metric latency and component count.}
+\label{tab:latency}
+\end{table}
+
+\subsection{Production observations}
+We have run \texttt{keda-gpu-scaler} on a four-node GPU cluster (8$\times$A100
+80\,GB per node, on Amazon EKS) serving LLM inference with vLLM (Llama~3 70B,
+4-bit quantized). We observed the following. First, device memory is the right
+signal for vLLM: SM utilization stayed near 60--70\% even under heavy load
+because vLLM batches requests, whereas VRAM pressure tracked request-queue depth
+closely, with latency spiking within seconds once the KV cache filled past
+roughly 80\%. Second, scale-to-zero produced meaningful savings: development and
+staging endpoints sat idle more than 18 hours per day, and releasing those GPUs
+reduced non-production GPU spend by roughly 60\%. Third, the short poll interval
+mattered: with the Prometheus pipeline a traffic burst could saturate GPUs for
+15--30~s before a new pod scheduled, whereas direct NVML surfaced the spike within
+one poll cycle. Fourth, the best aggregation strategy is workload-dependent:
+\texttt{avg} suited tensor-parallel serving across four GPUs, while \texttt{max}
+caught a hot device faster when several smaller models shared a node. These are
+observations from a single deployment rather than a controlled benchmark, and
+results will vary with model size, request patterns, and node configuration.
+
+\subsection{Operational overhead}
+Compared with a DCGM-plus-Prometheus pipeline, the DaemonSet adds no cluster-wide
+components, keeps all state in memory rather than in a time-series database, and
+is configured through \texttt{ScaledObject} YAML rather than PromQL queries,
+scrape configs, and adapter rules.
+
+\section{Related Work}
+
+DCGM Exporter exposes NVIDIA DCGM metrics to Prometheus but requires the full
+pipeline and offers no direct KEDA integration. GPU feature discovery labels
+nodes with static GPU properties but no runtime metrics. HAMi \cite{hami}
+focuses on GPU sharing and partitioning rather than autoscaling. Higher-level AI
+workload managers typically rely on standard HPA. Node autoscalers such as
+Karpenter scale nodes rather than pods and are not GPU-metric aware.
+\texttt{keda-gpu-scaler} is complementary: DCGM Exporter remains useful for
+dashboards, while the scaler moves the scaling \emph{decision} off the monitoring
+pipeline and onto a direct hardware read.
+
+\section{Future Directions}
+
+Planned directions include AMD ROCm support using a \texttt{rocm-smi}-based
+collector behind the same interface, per-partition MIG metrics, NVLink
+topology-aware scaling, reading vLLM queue depth directly from the engine for
+predictive scaling, and cross-node (fleet-wide) metric aggregation for
+cluster-level scaling decisions.
+
+\section{Conclusion}
+
+Kubernetes has no visibility into GPU state, and existing workarounds add latency
+and operational complexity. A DaemonSet that reads NVML directly and serves KEDA
+over gRPC respects the underlying constraints---NVML requires cgo, GPU devices
+are node-local, and GPU tooling evolves faster than the KEDA release cycle---and
+reduces metric latency to a few seconds while enabling GPU scale-to-zero. The
+software is open source and available at \cite{kgs}.
+
+\begin{thebibliography}{99}
+
+\bibitem{keda} KEDA: Kubernetes Event-driven Autoscaling. \url{https://keda.sh}
+
+\bibitem{kgs} P. Madduri. keda-gpu-scaler: GPU-aware autoscaling for Kubernetes
+from real hardware metrics. Zenodo, 2026. \url{https://doi.org/10.5281/zenodo.22866676}
+
+\bibitem{nvml} NVIDIA Corporation. NVIDIA Management Library (NVML).
+\url{https://developer.nvidia.com/management-library-nvml}
+
+\bibitem{gonvml} NVIDIA Corporation. go-nvml: NVML bindings for Go.
+\url{https://github.com/NVIDIA/go-nvml}
+
+\bibitem{keda-extscaler} KEDA External Scaler specification.
+\url{https://keda.sh/docs/latest/concepts/external-scalers/}
+
+\bibitem{keda7538} KEDA issue \#7538: GPU scaler discussion.
+\url{https://github.com/kedacore/keda/issues/7538}
+
+\bibitem{vllm} W. Kwon, Z. Li, S. Zhuang, Y. Sheng, L. Zheng, C. H. Yu,
+J. E. Gonzalez, H. Zhang, and I. Stoica. Efficient Memory Management for Large
+Language Model Serving with PagedAttention. In \emph{Proc. 29th ACM Symposium on
+Operating Systems Principles (SOSP)}, 2023.
+
+\bibitem{volcano} Volcano: Cloud-native batch scheduling system.
+\url{https://volcano.sh}
+
+\bibitem{volcanopr} P. Madduri. GPU NUMA-aware scheduling. Volcano PR \#5095.
+\url{https://github.com/volcano-sh/volcano/pull/5095}
+
+\bibitem{hami} HAMi: Heterogeneous AI Computing Virtualization Middleware.
+\url{https://github.com/Project-HAMi/HAMi}
+
+\end{thebibliography}
+
+\end{document}
