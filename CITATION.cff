@@ -4,6 +4,7 @@ title: "keda-gpu-scaler: GPU-aware autoscaling for Kubernetes from real hardware
 authors:
   - family-names: "Madduri"
     given-names: "Pavan"
+    orcid: "https://orcid.org/0009-0007-3795-7593"
 type: software
 version: 1.0.1
 date-released: 2026-09-20
